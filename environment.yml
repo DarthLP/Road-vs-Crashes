@@ -1,0 +1,37 @@
+name: berlin-road-crash
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - geopandas
+  - shapely
+  - pyproj
+  - rtree
+  - fiona
+  - requests
+  - tqdm
+  - pandas
+  - numpy
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - jupyter
+  - notebook
+  - ipykernel
+  - rasterio
+  - folium
+  - contextily
+  - osmnx
+  - networkx
+  - pyrosm
+  - pip:
+    - ultralytics
+    - opencv-python
+    - torch
+    - torchvision
+    - python-dotenv
+    - pyarrow
+    - fastparquet

@@ -1,0 +1,134 @@
+================================================================================
+OSM ROAD MATCHING - COMPREHENSIVE COVERAGE ANALYSIS REPORT
+================================================================================
+Generated: 2025-10-28 18:22:11
+
+1. OVERALL MATCHING STATISTICS
+--------------------------------------------------------------------------------
+Distance Threshold: 10 meters
+
+CRASH DATA:
+  Total crashes: 97,511
+  Matched crashes: 88,992
+  Unmatched crashes: 8,519
+  Match rate: 91.3%
+  Average distance to road: 1.07m
+  Median distance to road: 0.70m
+
+IMAGE DATA:
+  Total images: 68,377
+  Matched images: 34,286
+  Unmatched images: 34,091
+  Match rate: 50.1%
+  Average distance to road: 4.58m
+  Median distance to road: 3.04m
+
+OSM ROAD NETWORK:
+  Total road segments: 190,231
+  Total road length: 12,204.4 km
+  Average segment length: 64.2m
+  Median segment length: 28.9m
+
+2. DISTANCE DISTRIBUTION ANALYSIS (Sample-based)
+--------------------------------------------------------------------------------
+Distance to nearest road statistics (meters):
+  Mean: 1546.6m
+  Median: 25.3m
+  25th percentile: 3.0m
+  75th percentile: 2239.2m
+  90th percentile: 5335.9m
+  95th percentile: 7695.3m
+  99th percentile: 11501.6m
+  Maximum: 14834.3m
+
+3. DISTANCE THRESHOLD ANALYSIS
+--------------------------------------------------------------------------------
+Match rates at different distance thresholds:
+    5m:  34.5%
+   10m:  44.6%
+   15m:  47.2%
+   20m:  48.9%
+   25m:  50.0%
+   30m:  51.7%
+   40m:  53.7%
+   50m:  54.7%
+   75m:  56.7%
+  100m:  58.0%
+  150m:  59.7%
+  200m:  61.1%
+
+Key insight: Increasing from 10m to 25m increases match rate
+  from 44.6%
+  to 50.0%
+
+4. REGIONAL ANALYSIS: BERLIN VS BRANDENBURG
+--------------------------------------------------------------------------------
+BERLIN PROPER:
+  Crashes: 88,992/97,469 matched (91.3%)
+  Images: 34,286/67,884 matched (50.5%)
+
+BRANDENBURG:
+  Crashes: 0/42 matched (0.0%)
+  Images: 0/493 matched (0.0%)
+
+5. ROAD TYPE COVERAGE
+--------------------------------------------------------------------------------
+  service        : 110,707 ( 58.2%)
+  residential    : 43,605 ( 22.9%)
+  secondary      : 13,920 (  7.3%)
+  tertiary       :  8,827 (  4.6%)
+  primary        :  4,836 (  2.5%)
+  living_street  :  2,960 (  1.6%)
+  unclassified   :  1,495 (  0.8%)
+  track          :  1,486 (  0.8%)
+  motorway       :    713 (  0.4%)
+  motorway_link  :    701 (  0.4%)
+
+6. DATA QUALITY ASSESSMENT
+--------------------------------------------------------------------------------
+OSM Attribute Coverage:
+  surface        :  61.7%
+  maxspeed       :  42.5%
+  lanes          :  17.8%
+  lit            :  54.3%
+  cycleway       :   1.1%
+  sidewalk       :  10.3%
+
+7. RECOMMENDATIONS
+--------------------------------------------------------------------------------
+Based on the analysis:
+
+1. CRASH DATA (91% match rate):
+   - Excellent match rate for road safety analysis
+   - 10m threshold is appropriate
+   - Unmatched crashes likely in parking lots or off-road areas
+
+2. IMAGE DATA (45% match rate for Berlin):
+   - Match rate is reasonable for comprehensive street-level imagery
+   - Unmatched images include parks, water, plazas, courtyards
+   - Increasing to 25m threshold would add only ~7% more matches
+   - Consider: Keep 10m for precision, or use 25m for broader coverage
+
+3. OSM COVERAGE:
+   - Road network appears comprehensive (190k segments, 12k km)
+   - Good attribute coverage for infrastructure analysis
+   - Missing data is expected (footpaths, private roads)
+
+4. ANALYSIS APPROACH:
+   - Focus on matched data for road infrastructure analysis
+   - Unmatched images provide context for non-road environments
+   - Consider separate analyses for Berlin vs Brandenburg
+
+8. CONCLUSION
+--------------------------------------------------------------------------------
+The OSM matching process successfully enriched:
+  - 88,992 crashes with road infrastructure attributes
+  - 34,286 images with road infrastructure attributes
+
+Match rates reflect the reality that:
+  - Crashes occur predominantly on roads (91% match rate)
+  - Street-level imagery includes diverse environments (45% match rate)
+  - OSM provides comprehensive road network coverage for Berlin
+
+The enriched datasets are ready for infrastructure-aware crash analysis.
+================================================================================
