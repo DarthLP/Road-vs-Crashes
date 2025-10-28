@@ -84,6 +84,21 @@ python src/features/coverage_analysis.py
 - Provides detailed coverage analysis and recommendations
 - Saves outputs to `reports/osm_matching_coverage_analysis.xlsx` and `reports/figures/matcheddata/`
 
+### 5. YOLOv8 Road Damage Detection Pipeline
+```bash
+# Convert RDD2022 dataset to YOLO format
+python src/modeling/convert_rdd_to_yolo.py
+
+# Train YOLOv8s model on road damage detection
+python src/modeling/train_yolo.py
+```
+- Downloads RDD2022 dataset from Kaggle using kagglehub
+- Converts XML annotations to YOLO format with consolidated crack classes
+- Filters out drone images to focus on street-level data
+- Trains YOLOv8s model to detect: crack, other corruption, Pothole
+- Uses Mac-optimized MPS device for training acceleration
+- Saves best weights to `runs/detect/train/weights/best.pt`
+
 ### Setup
 
 1. **Clone and navigate to the project:**
@@ -148,6 +163,14 @@ python src/features/coverage_analysis.py
 * `data/processed/mapillary_with_osm.csv` (images enriched with road attributes)
 * `data/interim/osm_berlin_roads.gpkg` (processed OSM road network)
 
+### YOLOv8 Road Damage Detection Outputs
+* `data/rdd_yolo/` (YOLO format dataset with train/val splits)
+* `data/rdd_yolo/data.yaml` (dataset configuration file)
+* `runs/detect/train/weights/best.pt` (best trained model weights)
+* `runs/detect/train/weights/last.pt` (last epoch weights)
+* `runs/detect/train/predictions/` (inference test results on validation images)
+* `runs/detect/train/` (training metrics, plots, and logs)
+
 ### Data Files
 * `data/processed/crashes_aggregated.csv` (cleaned crash data 2018-2021)
 * `data/processed/tile_year_features.parquet` (tile×year visual features)
@@ -202,7 +225,7 @@ berlin-road-crash/
 
 ### II. Visual features (inference) & aggregation
 1. **Sampling strategy**: From tiles with ≥N images/year, sample up to **k=5 images** per tile per year
-2. **Detector(s)**: YOLO‑seg/YOLO‑det pretrained models
+2. **Detector(s)**: YOLOv8s finetuned on RDD2022 dataset for road damage detection
 3. **Run inference** and store per‑image predictions
 4. **Aggregate features per tile×year**: mean/sum normalized by image count
 

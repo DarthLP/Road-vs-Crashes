@@ -34,9 +34,11 @@ This is a comprehensive technical specification for executing a 3-day end-to-end
 - **Aggregation Level**: Tile × Year combinations
 
 ### Visual Feature Detection
-- **Models**: YOLO-seg/YOLO-det pretrained (transfer-learned if available)
+- **Models**: YOLOv8s finetuned on RDD2022 dataset for road damage detection
+- **Classes**: crack (consolidated), other corruption, Pothole
 - **Features**: pothole_count, defect_area_ratio, damaged_sign_count, litter_count, green_pixels_ratio, vehicle_count
 - **Sampling**: Up to k=1000 images per tile per year from tiles with ≥N images/year
+- **Training Pipeline**: RDD2022 → YOLO format conversion → YOLOv8s finetuning → inference
 
 ### OSM Infrastructure Enrichment
 - **Data Source**: Berlin OSM extract from Geofabrik (.pbf format)
@@ -196,6 +198,7 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
 - [x] Raw data visualization suite (`src/viz/rawdata/mapillary_viz.py`)
 - [x] Traffic accident data aggregation (`src/features/aggregate_crashes.py`)
 - [x] Comprehensive crash data visualization suite (`src/viz/rawdata/crashes_viz.py`)
+- [x] YOLOv8 road damage detection pipeline (`src/modeling/convert_rdd_to_yolo.py`, `train_yolo.py`)
 
 ### Completed Steps
 1. **Data Collection**:
@@ -223,8 +226,10 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
    - Compute coverage statistics
 
 2. **Feature Inference**:
-   - Implement YOLO-based visual analysis
-   - Process matched images for infrastructure features
+   - ✅ Implement YOLOv8 road damage detection pipeline
+   - ✅ Convert RDD2022 dataset to YOLO format
+   - ✅ Train YOLOv8s model on road damage classes
+   - Process matched images for infrastructure features using trained model
 
 ### Implementation Priorities
 1. **Robustness**: Handle API rate limits and data inconsistencies
