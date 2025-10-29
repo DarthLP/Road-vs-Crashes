@@ -747,6 +747,18 @@ def main():
     # Step 5: Create stratified split
     clusters_df = create_stratified_split(clusters_df, random_seed=42)
     
+    # Step 6: Drop empty columns
+    print("\n" + "=" * 80)
+    print("DROPPING EMPTY COLUMNS")
+    print("=" * 80)
+    empty_cols = [col for col in clusters_df.columns if clusters_df[col].isna().all() or (clusters_df[col].astype(str).str.strip() == '').all()]
+    if empty_cols:
+        print(f"  Dropping {len(empty_cols)} empty columns: {empty_cols}")
+        clusters_df = clusters_df.drop(columns=empty_cols)
+        print(f"  Remaining columns: {len(clusters_df.columns)}")
+    else:
+        print("  No empty columns to drop")
+    
     # Save final output
     print("\n" + "=" * 80)
     print("SAVING FINAL OUTPUT")

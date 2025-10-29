@@ -36,11 +36,13 @@ This is a comprehensive technical specification for executing a 3-day end-to-end
 ### Visual Feature Detection
 - **Models**: YOLOv8s finetuned on RDD2022 Czech + Norway subset for road damage detection
 - **Dataset**: 10,990 images (Czech Republic + Norway) compressed to 1024x768 pixels
+- **Test Dataset**: USA images from RDD2022 for independent evaluation (excluding Czech, Norway, and drone data)
 - **Classes**: crack (consolidated), other corruption, Pothole
 - **Compression**: 82.6% size reduction (8.4GB → 1.5GB) matching Mapillary quality
 - **Features**: pothole_count, defect_area_ratio, damaged_sign_count, litter_count, green_pixels_ratio, vehicle_count
 - **Sampling**: Up to k=1000 images per tile per year from tiles with ≥N images/year
 - **Training Pipeline**: RDD2022 → Czech/Norway filtering → image compression → YOLO format → YOLOv8s finetuning → inference
+- **Test Pipeline**: RDD2022 → USA filtering → image compression → test split added to dataset structure
 
 ### OSM Infrastructure Enrichment
 - **Data Source**: Berlin OSM extract from Geofabrik (.pbf format)
@@ -136,7 +138,19 @@ def fetch_all_pages(base_url, params):
 
 ## Modeling Approach
 
-### Target Variables
+### Baseline Model (Implemented)
+- **Model Type**: Logistic Regression (binary classification)
+- **Target**: `match_label` (1 = crash occurred near cluster, 0 = no crash)
+- **Features**: Structured road infrastructure attributes only (18 features → 66 after one-hot encoding)
+  - Categorical: highway, surface, lit, cycleway, sidewalk, oneway, bridge, tunnel, junction, access, smoothness
+  - Boolean: is_intersection, near_traffic_signal
+  - Numeric: road_segment_length_m, maxspeed, lanes, width, intersection_degree
+- **Preprocessing**: One-hot encoding for categoricals, median imputation for numerics (train-only)
+- **Performance**: ROC AUC ~0.75, Precision ~0.14, Recall ~0.70-0.76, F1 ~0.24
+- **Residuals**: Computed as `actual_label - predicted_probability` for CNN regression target
+- **Purpose**: Establish baseline explainable by structured data; residuals capture visual risk
+
+### Target Variables (Planned)
 - **Primary**: Annual crash counts per tile (Poisson/Negative Binomial)
 - **Secondary**: Crash rates per road length
 - **Change Targets**: Δ crashes = crashes_t - crashes_{t-1}
@@ -148,6 +162,20 @@ def fetch_all_pages(base_url, params):
 4. **Z-score Normalization**: Within-year standardization to reduce illumination effects
 
 ### Model Specifications
+
+**Baseline Logistic Regression (Implemented)**:
+```python
+# Features: structured road attributes only
+features = ['highway', 'surface', 'lit', 'cycleway', 'sidewalk', 'oneway', 
+           'bridge', 'tunnel', 'junction', 'access', 'smoothness',
+           'is_intersection', 'near_traffic_signal',
+           'road_segment_length_m', 'maxspeed', 'lanes', 'width', 'intersection_degree']
+
+# Model: LogisticRegression with class_weight='balanced'
+# Residuals: actual_label - predicted_probability (CNN target)
+```
+
+**Planned Models**:
 ```python
 # Baseline model (controls only)
 baseline_formula = "crashes ~ images_per_tile_year + road_density + district"
@@ -204,6 +232,7 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
 - [x] Crash-to-image matching (`src/features/match_crashes_to_images.py`)
 - [x] Matching analysis and visualization (`src/viz/analyze_match_results.py`)
 - [x] 15m cluster dataset creation (`src/features/create_cluster_dataset.py`)
+- [x] Baseline logistic regression pipeline (`src/modeling/baseline_logistic_regression.py`)
 
 ### Completed Steps
 1. **Data Collection**:
@@ -246,7 +275,36 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
    - ✅ Output: `data/processed/clusters_with_crashes.csv` (11,567 clusters, 808 with crashes)
    - ✅ Output: Cluster reports and figures in `reports/Clusters/`
 
-6. **Data Validation**:
+6. **Baseline Logistic Regression Pipeline**:
+   - ✅ Build interpretable baseline model predicting crash occurrence from structured road attributes
+   - ✅ Feature selection: highway type, surface, lighting, cycleway, sidewalk, maxspeed, lanes, etc.
+   - ✅ Exclude leakage features: coordinates, density measures, crash counts
+   - ✅ Missing data handling: categorical → "missing", numeric → median from train only
+   - ✅ Preprocessing pipeline: one-hot encode categoricals, pass-through numerics
+   - ✅ Train logistic regression with class_weight='balanced' on train split
+   - ✅ Evaluate on train/val/test splits (accuracy, precision, recall, F1, ROC AUC)
+   - ✅ Compute residuals (actual - predicted probability) for CNN regression target
+   - ✅ Generate comparison visualizations across splits
+   - ✅ Output: `data/processed/clusters_{train,val,test}_with_residuals.csv`
+   - ✅ Output: Model pipeline, metadata, coefficient report, visualizations
+   - ✅ Results: ROC AUC ~0.75, high recall (0.68-0.76) but low precision (0.14) due to class imbalance
+
+7. **CNN Residual Prediction Pipeline**:
+   - ✅ Data preparation: Transform residual CSV files into per-cluster samples (one image per cluster)
+   - ✅ ResNet18 architecture with regression head (predicts residual, not crash directly)
+   - ✅ Two-phase training: frozen backbone (epochs 1-2) then fine-tuning (epochs 3+)
+   - ✅ MPS support for Apple Silicon acceleration
+   - ✅ Early stopping based on validation MSE (3 epochs without improvement)
+   - ✅ Comprehensive tracking: train/val MSE and MAE per epoch
+   - ✅ Grad-CAM compatibility: preserves ResNet layer structure for interpretability
+   - ✅ Output: `models/cnn_residual_best.pth` (eval mode, full weights)
+   - ✅ Output: `data/processed/cnn_test_predictions.csv` (image_url → predicted_residual mapping)
+   - ✅ Output: `data/processed/cnn_test_top_visual_risks.csv` (ranked high-risk images)
+   - ✅ Output: `reports/CNN/training_log.csv` (epoch-by-epoch metrics)
+   - ✅ Output: `reports/CNN/figures/` (loss curves, scatter plots, high-risk image gallery)
+   - ✅ Purpose: Learn visual safety cues that OSM attributes missed (residual = actual - predicted)
+
+8. **Data Validation**:
    - ✅ Verify spatial coverage and match rates
    - ✅ Check temporal consistency
    - ✅ Assess data quality and generate recommendations
@@ -262,6 +320,7 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
 ### Next Steps
 1. **Spatial Setup**:
    - ✅ Created 15m cluster grid (implemented)
+   - ✅ CNN residual prediction pipeline (implemented)
    - Perform spatial joins (images → tiles, crashes → tiles)
    - Compute coverage statistics
 
@@ -269,7 +328,15 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
    - ✅ Implement YOLOv8 road damage detection pipeline
    - ✅ Convert RDD2022 dataset to YOLO format
    - ✅ Train YOLOv8s model on road damage classes
+   - ✅ Create USA test dataset (500 images for independent evaluation)
+   - ✅ Test YOLO model evaluation script with comprehensive metrics
    - Process matched images for infrastructure features using trained model
+
+3. **CNN Pipeline**:
+   - ✅ Data preparation and training scripts (implemented)
+   - ✅ Visualization and evaluation (implemented)
+   - Optional: Grad-CAM visualization script for interpretability
+   - Optional: Spatial mapping of CNN predictions
 
 ### Implementation Priorities
 1. **Robustness**: Handle API rate limits and data inconsistencies

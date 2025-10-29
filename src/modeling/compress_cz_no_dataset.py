@@ -96,8 +96,10 @@ def compress_dataset(source_dir, target_dir, target_size=(1024, 768), quality=85
     # Create target directory structure
     os.makedirs(os.path.join(target_dir, 'images', 'train'), exist_ok=True)
     os.makedirs(os.path.join(target_dir, 'images', 'val'), exist_ok=True)
+    os.makedirs(os.path.join(target_dir, 'images', 'test'), exist_ok=True)
     os.makedirs(os.path.join(target_dir, 'labels', 'train'), exist_ok=True)
     os.makedirs(os.path.join(target_dir, 'labels', 'val'), exist_ok=True)
+    os.makedirs(os.path.join(target_dir, 'labels', 'test'), exist_ok=True)
     
     stats = {
         'czech_images': 0,
@@ -113,7 +115,7 @@ def compress_dataset(source_dir, target_dir, target_size=(1024, 768), quality=85
     }
     
     # Process each split
-    for split in ['train', 'val']:
+    for split in ['train', 'val', 'test']:
         print(f"\n📁 Processing {split} split...")
         
         source_images_dir = os.path.join(source_dir, 'images', split)
@@ -198,6 +200,7 @@ def create_compressed_data_yaml(target_dir):
         f.write("""path: data/rdd_yolo_cz_no_compressed
 train: images/train
 val: images/val
+test: images/test
 names:
   0: crack
   1: other corruption

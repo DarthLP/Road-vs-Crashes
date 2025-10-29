@@ -141,12 +141,40 @@ python src/features/create_cluster_dataset.py
 - `reports/Clusters/cluster_image_statistics.csv` - Image count distribution
 - `reports/Clusters/figures/` - 5 visualization files including summary dashboard
 
-### 8. YOLOv8 Road Damage Detection Pipeline
+### 8. Baseline Logistic Regression Pipeline (Crash Prediction)
+```bash
+python src/modeling/baseline_logistic_regression.py
+```
+- Builds interpretable baseline logistic regression model predicting crash occurrence
+- Uses only structured road infrastructure attributes (no images)
+- Features include: highway type, surface, lighting, cycleway, sidewalk, maxspeed, lanes, etc.
+- Handles missing data appropriately (categorical → "missing", numeric → median from train)
+- One-hot encodes categorical features for linear model compatibility
+- Trains on train split, evaluates on train/val/test splits
+- Computes residuals (actual - predicted probability) for each observation
+- Residuals capture visual risk unexplained by structured data (CNN target)
+
+**Key Results:**
+- **Train metrics**: Accuracy 0.68, Precision 0.14, Recall 0.71, F1 0.24, ROC AUC 0.76
+- **Val metrics**: Accuracy 0.66, Precision 0.14, Recall 0.76, F1 0.24, ROC AUC 0.75
+- **Test metrics**: Accuracy 0.69, Precision 0.14, Recall 0.68, F1 0.24, ROC AUC 0.75
+- Model shows high recall (catches most crashes) but low precision (many false positives)
+- ROC AUC ~0.75 indicates reasonable discriminative ability despite class imbalance
+
+**Output Files:**
+- `data/processed/clusters_{train,val,test}_with_residuals.csv` - Datasets with residual column
+- `models/baseline_logistic_regression.pkl` - Complete model pipeline (preprocessing + model)
+- `models/baseline_logistic_regression_metadata.json` - Model metadata and hyperparameters
+- `reports/baseline_logistic_regression_coefficients.csv` - Feature coefficient interpretation
+- `reports/Regression_beforeCNN/baseline_metrics_comparison.csv` - Metrics across splits
+- `reports/Regression_beforeCNN/` - 4 comparison visualizations (bars, lines, heatmap, individual)
+
+### 9. YOLOv8 Road Damage Detection Pipeline
 ```bash
 # Convert RDD2022 dataset to YOLO format
 python src/modeling/convert_rdd_to_yolo.py
 
-# Filter to Czech Republic + Norway only
+# Filter to Czech Republic + Norway only (train + val)
 python src/modeling/filter_czech_norway.py
 
 # Compress all images to 1024x768 (Mapillary quality)
@@ -164,6 +192,40 @@ python src/modeling/train_yolo_cz_no.py
 - Trains YOLOv8s model to detect: crack, other corruption, Pothole
 - Uses Mac-optimized MPS device for training acceleration
 - Saves best weights to `runs/detect/train_cz_no/weights/best.pt`
+
+### 9a. USA Test Data Preparation
+```bash
+# Filter USA images from RDD2022 for test evaluation
+python src/modeling/filter_usa_test.py
+
+# Compress USA test images to 1024x768
+python src/modeling/compress_usa_test.py
+```
+- Extracts 500 USA images from RDD2022 dataset (excluding Czech, Norway, and drone data)
+- Creates test split in `data/rdd_yolo_cz_no_compressed/images/test/`
+- Compresses USA test images to 1024x768 to match Mapillary quality
+- Provides independent test dataset for model evaluation
+- Updates `data.yaml` to include test split configuration
+
+### 9b. Test Trained YOLO Model
+```bash
+# Test model on USA test dataset
+python src/modeling/test_yolo_model.py --model runs/detect/train/weights/best.pt
+
+# Test with custom settings
+python src/modeling/test_yolo_model.py \
+    --model runs/detect/train/weights/best.pt \
+    --imgsz 1024 \
+    --conf 0.25 \
+    --save-predictions \
+    --num-samples 20
+```
+- Evaluates trained YOLOv8 model on 500 USA test images
+- Computes mAP50, mAP50-95, precision, recall, F1 scores
+- Generates confusion matrix and class-specific metrics
+- Saves detailed evaluation reports (JSON, CSV)
+- Creates visualization plots for metrics
+- Optionally saves sample predictions with bounding boxes
 
 ### Setup
 
@@ -368,6 +430,44 @@ berlin-road-crash/
 
 ### Output format:
 CSV with columns: `id`, `lon`, `lat`, `captured_at`, `thumb_256_url`
+
+## 🧠 CNN Residual Prediction Pipeline
+
+The project includes a CNN pipeline that predicts residual crash risk (unexplained by OSM attributes) from street-level images:
+
+### 1. Data Preparation
+```bash
+python src/modeling/prepare_cnn_dataset.py
+```
+- Transforms residual CSV files into per-cluster samples
+- Selects one representative image per cluster (first URL from list_of_thumb_1024_url)
+- Ensures 1:1 mapping (1 cluster ⇔ 1 image ⇔ 1 residual)
+- Output: `data/processed/cnn_samples_residual.csv`
+
+### 2. CNN Training
+```bash
+python src/modeling/train_cnn_residual.py [--max_epochs 4 --batch_size 8]
+```
+- ResNet18 architecture with regression head (predicts residual, not crash directly)
+- Two-phase training: frozen backbone (epochs 1-2) then fine-tuning (epochs 3+)
+- Uses MPS on Apple Silicon for faster training
+- Early stopping based on validation MSE
+- Saves model in eval mode for Grad-CAM compatibility
+
+### 3. Visualization
+```bash
+python src/modeling/visualize_cnn_results.py
+```
+- Generates loss curves, scatter plots, residual distributions
+- Creates gallery of top high-risk images
+- Saves figures to `reports/CNN/figures/`
+
+**Key Features:**
+- **Residual Prediction**: CNN learns visual safety cues that OSM attributes missed
+- **Grad-CAM Ready**: Model preserves ResNet structure for interpretability
+- **One Image Per Cluster**: Clean 1:1 mapping for faster training
+- **MPS Support**: Automatic GPU acceleration on Apple Silicon
+- **Comprehensive Outputs**: Model weights, predictions, rankings, visualizations
 
 **Temporal Analysis:** All images are captured regardless of date. For analysis, you can compare periods like "before 2020" vs "after 2020" using the `captured_at` field.
 

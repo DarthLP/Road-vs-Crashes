@@ -3,11 +3,14 @@
 YOLOv8 Training Script for RDD2022 Road Damage Detection
 
 This script trains a YOLOv8s model on the RDD2022 dataset to detect road damage
-including cracks, potholes, and other corruption. It uses pretrained weights
-and optimized hyperparameters for road damage detection.
+as a single unified class. It uses pretrained weights and optimized hyperparameters
+for road damage detection with early stopping.
 
 Key Features:
 - Loads pretrained YOLOv8s weights
+- Trains with single "road_damage" class (merged from crack, other corruption, Pothole)
+- Trains for 30 epochs with early stopping (patience=5)
+- Uses image size 416x416 for better detection quality
 - Trains with Mac-optimized settings (MPS device)
 - Runs inference on validation images after training
 - Saves prediction visualizations for verification
@@ -17,6 +20,7 @@ Usage:
     python src/modeling/train_yolo.py
 
 Prerequisites:
+    - Run merge_yolo_classes.py to merge all classes to "road_damage"
     - Run filter_czech_norway.py first to create filtered dataset
     - Run compress_cz_no_dataset.py to compress images
     - Install ultralytics: pip install ultralytics
@@ -34,6 +38,31 @@ from pathlib import Path
 from ultralytics import YOLO
 import torch
 
+# =============================================================================
+# PATH CONFIGURATION
+# =============================================================================
+
+# Dataset paths
+DATA_DIR = "data/rdd_yolo_cz_no_compressed"
+DATA_YAML = os.path.join(DATA_DIR, "data.yaml")
+TRAIN_DIR = os.path.join(DATA_DIR, "images", "train")
+VAL_DIR = os.path.join(DATA_DIR, "images", "val")
+LABEL_DIR = os.path.join(DATA_DIR, "labels")
+
+# Model paths
+MODEL_WEIGHTS = "yolov8n.pt"  # Using nano model for speed (faster than 's' variant)
+BEST_WEIGHTS_PATH = "runs/detect/train/weights/best.pt"
+LAST_WEIGHTS_PATH = "runs/detect/train/weights/last.pt"
+
+# Output paths
+OUTPUT_DIR = "runs/detect"
+PROJECT_NAME = "train"
+PREDICTIONS_DIR = os.path.join(OUTPUT_DIR, PROJECT_NAME, "predictions")
+
+
+# =============================================================================
+# FUNCTIONS
+# =============================================================================
 
 def check_dataset_exists():
     """
@@ -42,28 +71,24 @@ def check_dataset_exists():
     Returns:
         bool: True if dataset is properly set up, False otherwise
     """
-    data_yaml = "data/rdd_yolo_cz_no_compressed/data.yaml"
-    train_dir = "data/rdd_yolo_cz_no_compressed/images/train"
-    val_dir = "data/rdd_yolo_cz_no_compressed/images/val"
-    
-    if not os.path.exists(data_yaml):
-        print(f"❌ Dataset configuration file not found: {data_yaml}")
+    if not os.path.exists(DATA_YAML):
+        print(f"❌ Dataset configuration file not found: {DATA_YAML}")
         print("   Please run filter_czech_norway.py and compress_cz_no_dataset.py first")
         return False
     
-    if not os.path.exists(train_dir):
-        print(f"❌ Training images directory not found: {train_dir}")
+    if not os.path.exists(TRAIN_DIR):
+        print(f"❌ Training images directory not found: {TRAIN_DIR}")
         print("   Please run filter_czech_norway.py and compress_cz_no_dataset.py first")
         return False
     
-    if not os.path.exists(val_dir):
-        print(f"❌ Validation images directory not found: {val_dir}")
+    if not os.path.exists(VAL_DIR):
+        print(f"❌ Validation images directory not found: {VAL_DIR}")
         print("   Please run filter_czech_norway.py and compress_cz_no_dataset.py first")
         return False
     
     # Count images in each split
-    train_count = len([f for f in os.listdir(train_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
-    val_count = len([f for f in os.listdir(val_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+    train_count = len([f for f in os.listdir(TRAIN_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+    val_count = len([f for f in os.listdir(VAL_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
     
     print(f"📊 Dataset verification:")
     print(f"   Training images: {train_count}")
@@ -96,7 +121,7 @@ def setup_device():
     return device
 
 
-def train_model(data_yaml, device, epochs=30, imgsz=416, batch=32, lr0=0.01):
+def train_model(data_yaml, device, epochs=30, imgsz=416, batch=32, lr0=0.01, patience=5):
     """
     Train the YOLOv8s model on the RDD2022 dataset.
     
@@ -107,12 +132,13 @@ def train_model(data_yaml, device, epochs=30, imgsz=416, batch=32, lr0=0.01):
         imgsz (int): Input image size
         batch (int): Batch size for training
         lr0 (float): Initial learning rate
+        patience (int): Early stopping patience (epochs without improvement)
         
     Returns:
         YOLO: Trained model object
     """
-    print("🤖 Loading YOLOv8s pretrained weights...")
-    model = YOLO('yolov8s.pt')
+    print("🤖 Loading YOLOv8 pretrained weights...")
+    model = YOLO(MODEL_WEIGHTS)
     
     print("🏋️ Starting training...")
     print(f"   Dataset: {data_yaml}")
@@ -121,6 +147,7 @@ def train_model(data_yaml, device, epochs=30, imgsz=416, batch=32, lr0=0.01):
     print(f"   Image size: {imgsz}")
     print(f"   Batch size: {batch}")
     print(f"   Learning rate: {lr0}")
+    print(f"   Early stopping patience: {patience}")
     
     # Train the model
     results = model.train(
@@ -130,11 +157,12 @@ def train_model(data_yaml, device, epochs=30, imgsz=416, batch=32, lr0=0.01):
         batch=batch,
         lr0=lr0,
         device=device,
-        project='runs/detect',
-        name='train',
+        project=OUTPUT_DIR,
+        name=PROJECT_NAME,
         save=True,
         plots=True,
-        val=True
+        val=True,
+        patience=patience
     )
     
     print("✅ Training completed!")
@@ -167,8 +195,7 @@ def run_inference_test(model, val_dir, num_images=3):
     prediction_paths = []
     
     # Create output directory for predictions
-    pred_dir = "runs/detect/train/predictions"
-    os.makedirs(pred_dir, exist_ok=True)
+    os.makedirs(PREDICTIONS_DIR, exist_ok=True)
     
     for img_name in test_images:
         img_path = os.path.join(val_dir, img_name)
@@ -181,17 +208,17 @@ def run_inference_test(model, val_dir, num_images=3):
             save=True,
             save_txt=True,
             conf=0.25,  # Confidence threshold
-            project=pred_dir,
+            project=PREDICTIONS_DIR,
             name=f"test_{os.path.splitext(img_name)[0]}",
             exist_ok=True
         )
         
         # Get the saved prediction path
-        pred_path = os.path.join(pred_dir, f"test_{os.path.splitext(img_name)[0]}", img_name)
+        pred_path = os.path.join(PREDICTIONS_DIR, f"test_{os.path.splitext(img_name)[0]}", img_name)
         if os.path.exists(pred_path):
             prediction_paths.append(pred_path)
     
-    print(f"✅ Inference test completed! Predictions saved to {pred_dir}")
+    print(f"✅ Inference test completed! Predictions saved to {PREDICTIONS_DIR}")
     return prediction_paths
 
 
@@ -199,29 +226,24 @@ def print_training_summary():
     """
     Print a summary of the training results and file locations.
     """
-    best_weights_path = "runs/detect/train/weights/best.pt"
-    last_weights_path = "runs/detect/train/weights/last.pt"
-    
     print("\n" + "="*60)
     print("🎉 YOLOv8 TRAINING COMPLETE!")
     print("="*60)
     
-    if os.path.exists(best_weights_path):
-        print(f"🏆 Best weights: {best_weights_path}")
+    if os.path.exists(BEST_WEIGHTS_PATH):
+        print(f"🏆 Best weights: {BEST_WEIGHTS_PATH}")
     else:
         print(f"⚠️  Best weights not found at expected location")
     
-    if os.path.exists(last_weights_path):
-        print(f"📁 Last weights: {last_weights_path}")
+    if os.path.exists(LAST_WEIGHTS_PATH):
+        print(f"📁 Last weights: {LAST_WEIGHTS_PATH}")
     
     print(f"📊 Training results: runs/detect/train/")
     print(f"📈 Metrics plots: runs/detect/train/")
-    print(f"🔍 Test predictions: runs/detect/train/predictions/")
+    print(f"🔍 Test predictions: {PREDICTIONS_DIR}/")
     
     print("\n📋 Model Classes:")
-    print("   0: crack (consolidated from longitudinal, transverse, alligator)")
-    print("   1: other corruption")
-    print("   2: Pothole")
+    print("   0: road_damage (merged from crack, other corruption, Pothole)")
     
     print("\n🚀 Next Steps:")
     print("   - Use best.pt for inference on new images")
@@ -242,19 +264,18 @@ def main():
     # Setup device
     device = setup_device()
     
-    # Training configuration (optimized for speed)
-    data_yaml = "data/rdd_yolo_cz_no_compressed/data.yaml"
-    epochs = 30
-    imgsz = 416
-    batch = 32
+    # Training configuration
+    epochs = 30  # Increased for better convergence
+    imgsz = 416  # Increased image size for better detection quality
+    batch = 16   # Keep small batch for memory efficiency
     lr0 = 0.01
+    patience = 5  # Early stopping patience (stops if no improvement for 5 epochs)
     
     # Train the model
-    model = train_model(data_yaml, device, epochs, imgsz, batch, lr0)
+    model = train_model(DATA_YAML, device, epochs, imgsz, batch, lr0, patience)
     
     # Run inference test
-    val_dir = "data/rdd_yolo_cz_no_compressed/images/val"
-    prediction_paths = run_inference_test(model, val_dir, num_images=3)
+    prediction_paths = run_inference_test(model, VAL_DIR, num_images=3)
     
     # Print summary
     print_training_summary()

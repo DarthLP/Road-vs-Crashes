@@ -253,11 +253,11 @@ def main():
         total_processed += processed
         total_skipped += skipped
     
-    # Process test split and merge into train (as specified in plan)
+    # Process test split as separate test set
     test_path = os.path.join(dataset_path, 'RDD_SPLIT', 'test')
     if os.path.exists(test_path):
-        print("🔄 Merging test split into training data...")
-        processed, skipped = process_dataset_split(test_path, 'train', output_dir)
+        print("🔄 Processing test split...")
+        processed, skipped = process_dataset_split(test_path, 'test', output_dir)
         total_processed += processed
         total_skipped += skipped
     
@@ -267,6 +267,7 @@ def main():
         f.write("""path: data/rdd_yolo
 train: images/train
 val: images/val
+test: images/test
 names:
   0: crack
   1: other corruption

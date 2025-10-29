@@ -39,14 +39,16 @@ def filter_dataset_by_countries(source_dir, target_dir, countries=['Czech', 'Nor
     # Create target directory structure
     os.makedirs(os.path.join(target_dir, 'images', 'train'), exist_ok=True)
     os.makedirs(os.path.join(target_dir, 'images', 'val'), exist_ok=True)
+    os.makedirs(os.path.join(target_dir, 'images', 'test'), exist_ok=True)
     os.makedirs(os.path.join(target_dir, 'labels', 'train'), exist_ok=True)
     os.makedirs(os.path.join(target_dir, 'labels', 'val'), exist_ok=True)
+    os.makedirs(os.path.join(target_dir, 'labels', 'test'), exist_ok=True)
     
     total_kept = 0
     total_removed = 0
     
     # Process each split
-    for split in ['train', 'val']:
+    for split in ['train', 'val', 'test']:
         print(f"\n📁 Processing {split} split...")
         
         source_images_dir = os.path.join(source_dir, 'images', split)
@@ -107,6 +109,7 @@ def create_filtered_data_yaml(target_dir):
         f.write("""path: data/rdd_yolo_cz_no
 train: images/train
 val: images/val
+test: images/test
 names:
   0: crack
   1: other corruption
