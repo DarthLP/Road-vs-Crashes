@@ -34,11 +34,13 @@ This is a comprehensive technical specification for executing a 3-day end-to-end
 - **Aggregation Level**: Tile × Year combinations
 
 ### Visual Feature Detection
-- **Models**: YOLOv8s finetuned on RDD2022 dataset for road damage detection
+- **Models**: YOLOv8s finetuned on RDD2022 Czech + Norway subset for road damage detection
+- **Dataset**: 10,990 images (Czech Republic + Norway) compressed to 1024x768 pixels
 - **Classes**: crack (consolidated), other corruption, Pothole
+- **Compression**: 82.6% size reduction (8.4GB → 1.5GB) matching Mapillary quality
 - **Features**: pothole_count, defect_area_ratio, damaged_sign_count, litter_count, green_pixels_ratio, vehicle_count
 - **Sampling**: Up to k=1000 images per tile per year from tiles with ≥N images/year
-- **Training Pipeline**: RDD2022 → YOLO format conversion → YOLOv8s finetuning → inference
+- **Training Pipeline**: RDD2022 → Czech/Norway filtering → image compression → YOLO format → YOLOv8s finetuning → inference
 
 ### OSM Infrastructure Enrichment
 - **Data Source**: Berlin OSM extract from Geofabrik (.pbf format)
@@ -198,7 +200,7 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
 - [x] Raw data visualization suite (`src/viz/rawdata/mapillary_viz.py`)
 - [x] Traffic accident data aggregation (`src/features/aggregate_crashes.py`)
 - [x] Comprehensive crash data visualization suite (`src/viz/rawdata/crashes_viz.py`)
-- [x] YOLOv8 road damage detection pipeline (`src/modeling/convert_rdd_to_yolo.py`, `train_yolo.py`)
+- [x] YOLOv8 road damage detection pipeline (`src/modeling/convert_rdd_to_yolo.py`, `filter_czech_norway.py`, `compress_cz_no_dataset.py`, `train_yolo_cz_no.py`)
 
 ### Completed Steps
 1. **Data Collection**:

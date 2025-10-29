@@ -17,9 +17,10 @@ Usage:
     python src/modeling/train_yolo.py
 
 Prerequisites:
-    - Run convert_rdd_to_yolo.py first to prepare the dataset
+    - Run filter_czech_norway.py first to create filtered dataset
+    - Run compress_cz_no_dataset.py to compress images
     - Install ultralytics: pip install ultralytics
-    - Ensure data/rdd_yolo/ directory exists with proper structure
+    - Ensure data/rdd_yolo_cz_no_compressed/ directory exists with proper structure
 
 Output:
     - Trained model weights saved to runs/detect/train/weights/best.pt
@@ -41,23 +42,23 @@ def check_dataset_exists():
     Returns:
         bool: True if dataset is properly set up, False otherwise
     """
-    data_yaml = "data/rdd_yolo/data.yaml"
-    train_dir = "data/rdd_yolo/images/train"
-    val_dir = "data/rdd_yolo/images/val"
+    data_yaml = "data/rdd_yolo_cz_no_compressed/data.yaml"
+    train_dir = "data/rdd_yolo_cz_no_compressed/images/train"
+    val_dir = "data/rdd_yolo_cz_no_compressed/images/val"
     
     if not os.path.exists(data_yaml):
         print(f"❌ Dataset configuration file not found: {data_yaml}")
-        print("   Please run convert_rdd_to_yolo.py first")
+        print("   Please run filter_czech_norway.py and compress_cz_no_dataset.py first")
         return False
     
     if not os.path.exists(train_dir):
         print(f"❌ Training images directory not found: {train_dir}")
-        print("   Please run convert_rdd_to_yolo.py first")
+        print("   Please run filter_czech_norway.py and compress_cz_no_dataset.py first")
         return False
     
     if not os.path.exists(val_dir):
         print(f"❌ Validation images directory not found: {val_dir}")
-        print("   Please run convert_rdd_to_yolo.py first")
+        print("   Please run filter_czech_norway.py and compress_cz_no_dataset.py first")
         return False
     
     # Count images in each split
@@ -242,7 +243,7 @@ def main():
     device = setup_device()
     
     # Training configuration (optimized for speed)
-    data_yaml = "data/rdd_yolo/data.yaml"
+    data_yaml = "data/rdd_yolo_cz_no_compressed/data.yaml"
     epochs = 30
     imgsz = 416
     batch = 32
@@ -252,7 +253,7 @@ def main():
     model = train_model(data_yaml, device, epochs, imgsz, batch, lr0)
     
     # Run inference test
-    val_dir = "data/rdd_yolo/images/val"
+    val_dir = "data/rdd_yolo_cz_no_compressed/images/val"
     prediction_paths = run_inference_test(model, val_dir, num_images=3)
     
     # Print summary

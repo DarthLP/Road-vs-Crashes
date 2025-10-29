@@ -89,15 +89,24 @@ python src/features/coverage_analysis.py
 # Convert RDD2022 dataset to YOLO format
 python src/modeling/convert_rdd_to_yolo.py
 
-# Train YOLOv8s model on road damage detection
-python src/modeling/train_yolo.py
+# Filter to Czech Republic + Norway only
+python src/modeling/filter_czech_norway.py
+
+# Compress all images to 1024x768 (Mapillary quality)
+python src/modeling/compress_cz_no_dataset.py
+
+# Train YOLOv8s model on compressed dataset
+python src/modeling/train_yolo_cz_no.py
 ```
 - Downloads RDD2022 dataset from Kaggle using kagglehub
-- Converts XML annotations to YOLO format with consolidated crack classes
+- Filters to Czech Republic + Norway subset (10,990 images)
+- Compresses all images to 1024x768 pixels (same as Mapillary)
+- Achieves 82.6% size reduction (8.4GB → 1.5GB)
+- Converts annotations to YOLO format with consolidated crack classes
 - Filters out drone images to focus on street-level data
 - Trains YOLOv8s model to detect: crack, other corruption, Pothole
 - Uses Mac-optimized MPS device for training acceleration
-- Saves best weights to `runs/detect/train/weights/best.pt`
+- Saves best weights to `runs/detect/train_cz_no/weights/best.pt`
 
 ### Setup
 

@@ -34,9 +34,7 @@ venv.bak/
 .ipynb_checkpoints
 
 # Data files
-data/rdd_yolo/
-data/raw/
-data/interim/
+data/
 data/processed/
 *.parquet
 *.geojson
