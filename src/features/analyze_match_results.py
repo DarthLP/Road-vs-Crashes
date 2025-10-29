@@ -65,8 +65,8 @@ def calculate_time_differences(df, threshold):
             'time_diff_list': []
         }
     
-    # Parse image capture dates
-    with_crashes['img_date'] = pd.to_datetime(with_crashes['captured_at'])
+    # Parse image capture dates (handle mixed formats)
+    with_crashes['img_date'] = pd.to_datetime(with_crashes['captured_at'], format='mixed', errors='coerce')
     with_crashes['img_year'] = with_crashes['img_date'].dt.year
     
     # Parse crash years and calculate differences
@@ -191,9 +191,9 @@ def get_matched_crashes_per_year(df, threshold):
     """
     suffix = f"_{threshold}m"
     
-    # Parse image capture dates
+    # Parse image capture dates (handle mixed formats)
     df_copy = df.copy()
-    df_copy['img_date'] = pd.to_datetime(df_copy['captured_at'])
+    df_copy['img_date'] = pd.to_datetime(df_copy['captured_at'], format='mixed', errors='coerce')
     df_copy['img_year'] = df_copy['img_date'].dt.year
     
     # Initialize year tracking

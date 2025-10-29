@@ -1,0 +1,4 @@
+threshold,total_shared_crashes,avg_images_per_shared_crash,max_images_per_crash,crashes_shared_by_2_images,crashes_shared_by_3_images,crashes_shared_by_4_plus_images,images_involved_in_sharing,pct_crashes_shared_by_2,pct_crashes_shared_by_3,pct_crashes_shared_by_4_plus
+5m,580,4.34,37,211,125,244,1798,36.38,21.55,42.07
+10m,1034,8.87,99,202,137,695,5251,19.54,13.25,67.21
+25m,1401,26.68,271,96,66,1239,12203,6.85,4.71,88.44
