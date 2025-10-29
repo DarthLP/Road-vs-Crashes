@@ -1,0 +1,7 @@
+images_per_cluster,frequency,percentage
+1,5326.0,46.04
+2-5,4883.0,42.21
+6-10,945.0,8.17
+11-20,306.0,2.65
+21+,107.0,0.93
+avg_per_cluster,2.96,

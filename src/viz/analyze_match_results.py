@@ -15,7 +15,7 @@ Functionality:
 - Saves all summaries to CSV files and figures to reports/Matches/
 
 How to run:
-    python src/features/analyze_match_results.py
+    python src/viz/analyze_match_results.py
 """
 
 import os

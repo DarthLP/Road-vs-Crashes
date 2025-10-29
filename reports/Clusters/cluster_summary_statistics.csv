@@ -1,0 +1,2 @@
+total_clusters,clusters_with_crashes,match_rate_pct,total_matched_crashes,avg_crashes_per_matched_cluster,median_crashes_per_matched_cluster,max_crashes_per_cluster,avg_images_per_cluster,median_images_per_cluster,max_images_per_cluster
+11567,808,6.99,1249,1.55,1.0,21,2.96,2.0,97

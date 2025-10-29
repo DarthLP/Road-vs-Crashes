@@ -84,7 +84,64 @@ python src/features/coverage_analysis.py
 - Provides detailed coverage analysis and recommendations
 - Saves outputs to `reports/osm_matching_coverage_analysis.xlsx` and `reports/figures/matcheddata/`
 
-### 5. YOLOv8 Road Damage Detection Pipeline
+### 5. Crash-to-Image Matching
+```bash
+python src/features/match_crashes_to_images.py
+```
+- Matches crashes to Mapillary images based on spatial proximity
+- Uses multiple distance thresholds (5m, 10m, 25m) for comparison
+- Filters matches by road attributes (highway AND surface must match)
+- Tracks temporal relationships (crashes before/after/same year as image)
+- Identifies shared crashes (crashes matched to multiple images)
+- Generates labeled datasets: `data/processed/mapillary_labeled_{5m,10m,25m}.csv`
+
+**Key Results:**
+- **5m threshold**: 2,063 images with crashes (6.0%), 2,865 total matches
+- **10m threshold**: 5,399 images with crashes (15.7%), 9,404 total matches
+- **25m threshold**: 12,267 images with crashes (35.8%), 37,493 total matches
+- All images preserved in output (even those with no matches)
+
+### 6. Matching Analysis & Visualization
+```bash
+python src/viz/analyze_match_results.py
+```
+- Generates comprehensive summary statistics comparing all thresholds
+- Analyzes shared crash patterns and distributions
+- Computes temporal distributions (time differences between images and crashes)
+- Creates year-wise breakdowns of matched crashes
+- Generates 8 visualization types comparing thresholds
+- Saves CSV summaries and figures to `reports/Matches/`
+
+**Output Files:**
+- CSV summaries: matching_summary_statistics.csv, shared_crashes_statistics.csv, crash_count_distributions.csv, matched_crashes_per_year.csv, temporal_distribution.csv
+- Visualizations: 8 figure files including summary dashboard, distribution comparisons, temporal analysis
+
+### 7. Create 15m Cluster Dataset
+```bash
+python src/features/create_cluster_dataset.py
+```
+- Creates 15m × 15m spatial clusters (tiles) from Mapillary images
+- Aggregates images per cluster with OSM attributes (year-independent clusters)
+- Matches crashes to clusters using point-in-polygon (no distance threshold, no year filtering)
+- Generates cluster-level analysis reports and visualizations
+- Creates stratified train/val/test split (70/15/15) by match_label
+
+**Key Features:**
+- **Cluster Assignment**: 15m UTM grid tiles covering Berlin, assigns cluster_id to each image
+- **Aggregation**: All images in a cluster aggregated together regardless of year
+- **Crash Matching**: Spatial matching only (all crashes in cluster bounds), tracks crash years as info
+- **Reports**: Summary statistics, crash distributions, temporal analysis, image statistics
+- **Dataset Split**: Stratified by crash presence to balance positive/negative examples
+
+**Output Files:**
+- `data/processed/clusters_with_crashes.csv` - Final dataset with one row per cluster_id
+- `reports/Clusters/cluster_summary_statistics.csv` - Overall cluster statistics
+- `reports/Clusters/cluster_crash_distributions.csv` - Distribution of crashes per cluster
+- `reports/Clusters/cluster_temporal_distribution.csv` - Crash year distribution
+- `reports/Clusters/cluster_image_statistics.csv` - Image count distribution
+- `reports/Clusters/figures/` - 5 visualization files including summary dashboard
+
+### 8. YOLOv8 Road Damage Detection Pipeline
 ```bash
 # Convert RDD2022 dataset to YOLO format
 python src/modeling/convert_rdd_to_yolo.py
@@ -172,6 +229,25 @@ python src/modeling/train_yolo_cz_no.py
 * `data/processed/mapillary_with_osm.csv` (images enriched with road attributes)
 * `data/interim/osm_berlin_roads.gpkg` (processed OSM road network)
 
+### Crash-to-Image Matching Outputs
+* `data/processed/mapillary_labeled_5m.csv` (images labeled with crash data at 5m threshold)
+* `data/processed/mapillary_labeled_10m.csv` (images labeled with crash data at 10m threshold)
+* `data/processed/mapillary_labeled_25m.csv` (images labeled with crash data at 25m threshold)
+* `reports/Matches/matching_summary_statistics.csv` (comparison across thresholds)
+* `reports/Matches/shared_crashes_statistics.csv` (shared crash analysis)
+* `reports/Matches/crash_count_distributions.csv` (distribution of crash counts)
+* `reports/Matches/matched_crashes_per_year.csv` (year-wise breakdown)
+* `reports/Matches/temporal_distribution.csv` (time difference distributions)
+* `reports/Matches/figures/` (8 visualization files including summary dashboard)
+
+### Cluster Dataset Outputs
+* `data/processed/clusters_with_crashes.csv` (15m clusters with crash matches, one row per cluster_id)
+* `reports/Clusters/cluster_summary_statistics.csv` (overall cluster statistics)
+* `reports/Clusters/cluster_crash_distributions.csv` (crash count distribution per cluster)
+* `reports/Clusters/cluster_temporal_distribution.csv` (crash years from crash_years column)
+* `reports/Clusters/cluster_image_statistics.csv` (images per cluster distribution)
+* `reports/Clusters/figures/` (5 visualization files including cluster summary dashboard)
+
 ### YOLOv8 Road Damage Detection Outputs
 * `data/rdd_yolo/` (YOLO format dataset with train/val splits)
 * `data/rdd_yolo/data.yaml` (dataset configuration file)
@@ -204,17 +280,25 @@ berlin-road-crash/
 │  │  ├─ mapillary_pull.py
 │  │  └─ berlin_crashes_pull.py
 │  ├─ features/
-│  │  ├─ tiling.py
-│  │  ├─ infer_yolo.py
-│  │  └─ aggregate.py
+│  │  ├─ aggregate_crashes.py
+│  │  ├─ download_osm_network.py
+│  │  ├─ process_osm_efficient.py
+│  │  ├─ snap_to_roads.py
+│  │  ├─ match_crashes_to_images.py
+│  │  ├─ create_coverage_excel.py
+│  │  ├─ coverage_analysis.py
+│  │  └─ create_cluster_dataset.py
 │  ├─ modeling/
 │  │  ├─ prepare_datasets.py
 │  │  └─ regress.py
 │  └─ viz/
 │     ├─ rawdata/
-│     │  └─ mapillary_viz.py
-│     ├─ maps.py
-│     └─ plots.py
+│     │  ├─ mapillary_viz.py
+│     │  ├─ crashes_viz.py
+│     │  └─ combined_spatial_viz.py
+│     ├─ spatial_matching_map.py
+│     ├─ improved_spatial_matching.py
+│     └─ analyze_match_results.py
 ├─ reports/
 │  └─ figures/
 ├─ environment.yml

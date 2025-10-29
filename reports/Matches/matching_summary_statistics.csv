@@ -1,4 +1,4 @@
 threshold,total_images,images_with_crashes,match_rate_pct,total_crash_matches,unique_crash_ids_matched,unique_images_involved,avg_crashes_per_matched_image,median_crashes_per_matched_image,max_crashes_per_image,std_crashes_per_image,avg_time_diff_years,median_time_diff_years,crashes_before_image,crashes_after_image,crashes_same_year_as_image,images_with_shared_crashes,total_shared_crash_relationships,avg_images_per_shared_crash,max_images_per_crash,crashes_shared_by_2,crashes_shared_by_3,crashes_shared_by_4_plus
-5m,34286,2063,6.02,2865,928,2063,1.39,1.0,16,1.0,2.79,2.0,1270,1129,267,1798,580,4.34,37,211,125,244
-10m,34286,5399,15.75,9404,1267,5399,1.74,1.0,17,1.63,2.72,2.0,3708,3542,869,5251,1034,8.87,99,202,137,695
-25m,34286,12267,35.78,37493,1513,12267,3.06,2.0,30,3.25,2.73,2.0,12166,11467,2918,12203,1401,26.68,271,96,66,1239
+5m,30533,2057,6.74,2859,926,2057,1.39,1.0,16,1.0,2.79,2.0,1269,1124,267,1795,579,4.34,37,211,124,244
+10m,30533,5338,17.48,9323,1262,5338,1.75,1.0,17,1.63,2.73,2.0,3686,3499,857,5244,1032,8.88,99,201,137,694
+25m,30533,11243,36.82,34071,1500,11243,3.03,2.0,30,3.2,2.75,2.0,11493,10241,2684,12199,1399,26.72,271,94,66,1239

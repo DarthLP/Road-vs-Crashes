@@ -29,9 +29,9 @@ This is a comprehensive technical specification for executing a 3-day end-to-end
 - **Rationale**: Metric units, minimal distortion for Berlin area
 
 ### Tiling Strategy
-- **Grid Type**: 1000m × 1000m square or hexagonal tiles
+- **Cluster Grid**: 15m × 15m square tiles implemented for cluster dataset
 - **Coverage**: Complete Berlin administrative boundary
-- **Aggregation Level**: Tile × Year combinations
+- **Aggregation Level**: Spatial cluster-level implemented (year-independent)
 
 ### Visual Feature Detection
 - **Models**: YOLOv8s finetuned on RDD2022 Czech + Norway subset for road damage detection
@@ -201,6 +201,9 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
 - [x] Traffic accident data aggregation (`src/features/aggregate_crashes.py`)
 - [x] Comprehensive crash data visualization suite (`src/viz/rawdata/crashes_viz.py`)
 - [x] YOLOv8 road damage detection pipeline (`src/modeling/convert_rdd_to_yolo.py`, `filter_czech_norway.py`, `compress_cz_no_dataset.py`, `train_yolo_cz_no.py`)
+- [x] Crash-to-image matching (`src/features/match_crashes_to_images.py`)
+- [x] Matching analysis and visualization (`src/viz/analyze_match_results.py`)
+- [x] 15m cluster dataset creation (`src/features/create_cluster_dataset.py`)
 
 ### Completed Steps
 1. **Data Collection**:
@@ -216,14 +219,49 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
    - ✅ Generate comprehensive coverage analysis and Excel report
    - ✅ Create improved spatial visualizations (no redundancy)
 
-3. **Data Validation**:
+3. **Crash-to-Image Matching**:
+   - ✅ Match crashes to images based on spatial proximity (5m, 10m, 25m thresholds)
+   - ✅ Filter matches by road attributes (highway AND surface must match)
+   - ✅ Generate labeled datasets with crash counts, temporal info, and shared crash tracking
+   - ✅ Track crashes occurring before/after/same year as image capture
+   - ✅ Analyze shared crashes (crashes matched to multiple images)
+   - ✅ Output: `data/processed/mapillary_labeled_{5m,10m,25m}.csv`
+
+4. **Matching Analysis & Visualization**:
+   - ✅ Generate comprehensive summary statistics comparing all thresholds
+   - ✅ Analyze shared crash patterns and distributions
+   - ✅ Compute temporal distributions (time differences between images and crashes)
+   - ✅ Create year-wise breakdowns of matched crashes
+   - ✅ Generate 8 visualization types comparing thresholds
+   - ✅ Output: CSV summaries and figures in `reports/Matches/`
+
+5. **15m Cluster Dataset Creation**:
+   - ✅ Create 15m × 15m UTM grid tiles covering Berlin
+   - ✅ Assign cluster_id to each image using spatial join
+   - ✅ Aggregate images per cluster (year-independent clustering)
+   - ✅ Match crashes to clusters using point-in-polygon (no distance threshold, no year filtering)
+   - ✅ Track crash years as informational column (crash_years)
+   - ✅ Generate cluster-level analysis reports and visualizations
+   - ✅ Create stratified train/val/test split (70/15/15) by match_label
+   - ✅ Output: `data/processed/clusters_with_crashes.csv` (11,567 clusters, 808 with crashes)
+   - ✅ Output: Cluster reports and figures in `reports/Clusters/`
+
+6. **Data Validation**:
    - ✅ Verify spatial coverage and match rates
    - ✅ Check temporal consistency
    - ✅ Assess data quality and generate recommendations
 
+### Cluster Dataset Approach
+- **Tile Size**: 15m × 15m squares in UTM (EPSG:25833)
+- **Aggregation**: Year-independent clusters (all images in cluster aggregated together)
+- **Crash Matching**: Point-in-polygon spatial matching only (no distance threshold, no year filtering)
+- **Year Information**: Tracked as informational columns (captured_at_years, crash_years)
+- **Dataset Split**: Stratified by match_label to balance positive/negative examples
+- **Results**: 11,567 clusters, 808 with crashes (7.0% match rate), 1,249 total matched crashes
+
 ### Next Steps
 1. **Spatial Setup**:
-   - Create 200m tile grid for Berlin
+   - ✅ Created 15m cluster grid (implemented)
    - Perform spatial joins (images → tiles, crashes → tiles)
    - Compute coverage statistics
 
