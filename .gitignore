@@ -79,3 +79,7 @@ temp/
 *.zip
 *.tar.gz
 *.rar
+
+# Cursor
+.cursor/
+MasterSystemPrompt.md
