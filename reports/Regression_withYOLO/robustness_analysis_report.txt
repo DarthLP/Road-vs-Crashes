@@ -1,0 +1,27 @@
+YOLO-Enhanced Logistic Regression: Robustness Analysis Report
+======================================================================
+
+SUMMARY
+--------------------
+Total scenarios tested: 7
+Successful scenarios: 7
+
+COEFFICIENT ROBUSTNESS
+-------------------------
+Mean coefficient: -0.0944
+Standard deviation: 0.0249
+Range: -0.1255 to -0.0636
+Sign consistency: 100.0%
+
+PERFORMANCE STABILITY
+----------------------
+F1 Score: 0.2219 ± 0.0012
+ROC AUC: 0.7416 ± 0.0007
+
+MOST STABLE SCENARIO
+----------------------
+Baseline (winsorized)
+
+DETAILED RESULTS
+-----------------
+See sensitivity_analysis.csv for complete results.

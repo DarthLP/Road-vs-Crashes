@@ -98,6 +98,10 @@ def evaluate_model(model, data_yaml, imgsz=416, conf_threshold=0.25):
         split='test',
         imgsz=imgsz,
         conf=conf_threshold,
+        iou=0.45,
+        agnostic_nms=False,
+        augment=False,
+        max_det=100,
         save_json=True,
         verbose=True
     )
@@ -134,10 +138,21 @@ def save_evaluation_report(metrics, output_dir):
     """
     os.makedirs(output_dir, exist_ok=True)
     
-    # Save JSON report
+    # Save JSON report (convert numpy arrays to serializable format)
     json_path = os.path.join(output_dir, 'test_metrics.json')
+    
+    # Convert numpy arrays to Python scalars for JSON serialization
+    serializable_metrics = {}
+    for key, value in metrics.items():
+        if hasattr(value, 'item'):  # numpy scalar
+            serializable_metrics[key] = value.item()
+        elif hasattr(value, 'tolist'):  # numpy array
+            serializable_metrics[key] = value.tolist()
+        else:
+            serializable_metrics[key] = value
+    
     with open(json_path, 'w') as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(serializable_metrics, f, indent=2)
     print(f"📊 Metrics saved to: {json_path}")
     
     # Save CSV summary
@@ -188,16 +203,16 @@ def visualize_metrics(metrics, output_dir):
     
     metric_names = ['mAP50', 'mAP50-95', 'Precision', 'Recall', 'F1']
     metric_values = [
-        metrics['mAP50'],
-        metrics['mAP50-95'],
-        metrics['precision'],
-        metrics['recall'],
-        metrics['f1']
+        float(metrics['mAP50'].item() if hasattr(metrics['mAP50'], 'item') else metrics['mAP50']),
+        float(metrics['mAP50-95'].item() if hasattr(metrics['mAP50-95'], 'item') else metrics['mAP50-95']),
+        float(metrics['precision'].item() if hasattr(metrics['precision'], 'item') else metrics['precision']),
+        float(metrics['recall'].item() if hasattr(metrics['recall'], 'item') else metrics['recall']),
+        float(metrics['f1'].item() if hasattr(metrics['f1'], 'item') else metrics['f1'])
     ]
     
     bars = ax.bar(metric_names, metric_values, color=['#2ecc71', '#3498db', '#e74c3c', '#f39c12', '#9b59b6'])
     ax.set_ylabel('Score', fontsize=12)
-    ax.set_title('YOLO Model Test Performance (USA Test Dataset)', fontsize=14, fontweight='bold')
+    ax.set_title('YOLO Model Test Performance (Czech + Norway Test Dataset)', fontsize=14, fontweight='bold')
     ax.set_ylim([0, 1])
     ax.grid(axis='y', alpha=0.3)
     
@@ -215,12 +230,28 @@ def visualize_metrics(metrics, output_dir):
     print(f"📈 Metrics visualization saved to: {output_path}")
     
     # Class-specific metrics if available
-    if metrics['class_metrics']:
+    if metrics.get('class_metrics') and len(metrics['class_metrics']) > 0:
         fig, ax = plt.subplots(figsize=(10, 6))
         
         classes = list(metrics['class_metrics'].keys())
-        map50_values = [metrics['class_metrics'][c]['mAP50'] for c in classes]
-        map5095_values = [metrics['class_metrics'][c]['mAP50-95'] for c in classes]
+        map50_values = []
+        map5095_values = []
+        for c in classes:
+            mAP50_val = metrics['class_metrics'][c].get('mAP50')
+            mAP5095_val = metrics['class_metrics'][c].get('mAP50-95')
+            
+            if mAP50_val is not None:
+                map50_val = float(mAP50_val.item() if hasattr(mAP50_val, 'item') else mAP50_val)
+            else:
+                map50_val = 0.0
+                
+            if mAP5095_val is not None:
+                map5095_val = float(mAP5095_val.item() if hasattr(mAP5095_val, 'item') else mAP5095_val)
+            else:
+                map5095_val = 0.0
+                
+            map50_values.append(map50_val)
+            map5095_values.append(map5095_val)
         
         x = np.arange(len(classes))
         width = 0.35
@@ -230,7 +261,7 @@ def visualize_metrics(metrics, output_dir):
         
         ax.set_xlabel('Class', fontsize=12)
         ax.set_ylabel('mAP Score', fontsize=12)
-        ax.set_title('Class-Specific Performance (USA Test Dataset)', fontsize=14, fontweight='bold')
+        ax.set_title('Class-Specific Performance (Czech + Norway Test Dataset)', fontsize=14, fontweight='bold')
         ax.set_xticks(x)
         ax.set_xticklabels(classes)
         ax.legend()
@@ -286,6 +317,11 @@ def save_predictions(model, data_yaml, output_dir, num_samples=20, imgsz=416):
         results = model.predict(
             source=img_path,
             imgsz=imgsz,
+            conf=0.25,
+            iou=0.45,
+            agnostic_nms=False,
+            augment=False,
+            max_det=100,
             save=True,
             project=predictions_dir,
             name=f'samples',
@@ -343,11 +379,11 @@ def main():
         print("\n" + "="*60)
         print("📊 TEST RESULTS")
         print("="*60)
-        print(f"mAP50:       {metrics['mAP50']:.4f}")
-        print(f"mAP50-95:    {metrics['mAP50-95']:.4f}")
-        print(f"Precision:   {metrics['precision']:.4f}")
-        print(f"Recall:      {metrics['recall']:.4f}")
-        print(f"F1 Score:    {metrics['f1']:.4f}")
+        print(f"mAP50:       {float(metrics['mAP50']):.4f}")
+        print(f"mAP50-95:    {float(metrics['mAP50-95']):.4f}")
+        print(f"Precision:   {float(metrics['precision']):.4f}")
+        print(f"Recall:      {float(metrics['recall']):.4f}")
+        print(f"F1 Score:    {float(metrics['f1']):.4f}")
         
         # Save reports
         save_evaluation_report(metrics, output_dir)

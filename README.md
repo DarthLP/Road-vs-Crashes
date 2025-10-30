@@ -18,6 +18,53 @@ A end‑to‑end reproducible project that links **street‑level infrastructure
 - Python ≥ 3.10
 - Conda for package management
 
+### Grad-CAM Visualization
+Generate interpretability visualizations for the CNN residual predictor:
+
+```bash
+# Activate environment
+conda activate berlin-road-crash
+
+# Generate Grad-CAM analysis (requires trained model)
+python src/modeling/visualize_gradcam.py \
+  --checkpoint models/cnn_residual_best.pth \
+  --num_samples 20 \
+  --method gradcam \
+  --colormap jet \
+  --save_stats
+
+# Compare Grad-CAM vs Grad-CAM++
+python src/modeling/visualize_gradcam.py \
+  --checkpoint models/cnn_residual_best.pth \
+  --method gradcampp \
+  --output_dir reports/CNN/gradcam_plusplus
+```
+
+**Output**: `reports/CNN/gradcam/` with heatmaps, overlays, grid summaries, and analysis report.
+
+### 📈 CNN Residual Augmentation Evaluation
+Evaluate how much the CNN residual adds beyond baseline probabilities (and YOLO-enhanced):
+
+```bash
+conda activate berlin-road-crash
+
+# Use saved predictions if present; will infer Val CNN preds if missing
+python src/modeling/evaluate_cnn_augmentation.py --use_saved_preds
+```
+
+Outputs:
+- `reports/CNN/cnn_augmentation_regression.csv`
+- `reports/CNN/cnn_vs_baseline_threshold_metrics.csv`
+- `reports/Comparison_Baseline_vs_YOLO/cnn_residual_vs_true_scatter.png`
+- `reports/Comparison_Baseline_vs_YOLO/augmentation_regression_coefficients.png`
+- `reports/Comparison_Baseline_vs_YOLO/delta_auc_bars.png`
+- `reports/Comparison_Baseline_vs_YOLO/delta_pseudo_r2_bars.png`
+- `reports/Comparison_Baseline_vs_YOLO/threshold_metrics_bars.png`
+
+Notes:
+- Thresholds are optimized on Val for F1 and Youden J; 0.5 is also reported.
+- Test is used exclusively for final metrics and all figures.
+
 ### 🖼️ Image Quality Options
 The project now supports multiple image resolutions from Mapillary API:
 - **256px** (default): Fast processing, lower quality
@@ -193,23 +240,9 @@ python src/modeling/train_yolo_cz_no.py
 - Uses Mac-optimized MPS device for training acceleration
 - Saves best weights to `runs/detect/train_cz_no/weights/best.pt`
 
-### 9a. USA Test Data Preparation
+### 9a. Test Trained YOLO Model
 ```bash
-# Filter USA images from RDD2022 for test evaluation
-python src/modeling/filter_usa_test.py
-
-# Compress USA test images to 1024x768
-python src/modeling/compress_usa_test.py
-```
-- Extracts 500 USA images from RDD2022 dataset (excluding Czech, Norway, and drone data)
-- Creates test split in `data/rdd_yolo_cz_no_compressed/images/test/`
-- Compresses USA test images to 1024x768 to match Mapillary quality
-- Provides independent test dataset for model evaluation
-- Updates `data.yaml` to include test split configuration
-
-### 9b. Test Trained YOLO Model
-```bash
-# Test model on USA test dataset
+# Test model on test dataset
 python src/modeling/test_yolo_model.py --model runs/detect/train/weights/best.pt
 
 # Test with custom settings
@@ -220,7 +253,43 @@ python src/modeling/test_yolo_model.py \
     --save-predictions \
     --num-samples 20
 ```
-- Evaluates trained YOLOv8 model on 500 USA test images
+- Evaluates trained YOLOv8 model on Czech + Norway test images (1,633 images)
+
+### 10. YOLO Street Quality Features & Enhanced Regression
+```bash
+# Extract YOLO features with ROI filtering
+python src/modeling/extract_yolo_features.py
+
+# Train enhanced logistic regression with YOLO features
+python src/modeling/logistic_regression_with_yolo.py
+
+# Compare baseline vs enhanced model
+python src/modeling/compare_baseline_vs_yolo.py
+
+# Run robustness analysis
+python src/modeling/robustness_analysis_yolo.py
+```
+- Extracts robust road-focused damage metrics from YOLO detections
+- Uses trapezoid ROI (bottom-centered) to reduce framing bias
+- Computes per-cluster aggregated metrics: street quality, damage density, detection counts
+- Winsorizes metrics per split independently (1%/99% tails)
+- Trains enhanced logistic regression with YOLO features + baseline infrastructure attributes
+- Compares performance against baseline model on train/test splits
+- Performs robustness checks with alternative YOLO features and model specifications
+
+**Key Features:**
+- **ROI Filtering**: Trapezoid mask focuses on road area (bottom 60% of image, 70% width)
+- **Per-Image Metrics**: count_roi, ratio_roi, percent_roi, density (per ROI megapixel)
+- **Per-Cluster Aggregation**: Median percent_roi → street_quality_roi, IQR, image count
+- **Winsorization**: Reduces outlier impact while preserving distribution shape
+- **Primary Feature**: street_quality_roi_winz (winsorized street quality percentage)
+
+**Output Files:**
+- `data/processed/clusters_{train,val,test}_with_yolo_roi.csv` - Datasets with YOLO features
+- `models/logistic_regression_with_yolo.pkl` - Enhanced model pipeline
+- `reports/Regression_withYOLO/` - Enhanced model reports and visualizations
+- `reports/Comparison_Baseline_vs_YOLO/` - Performance comparison analysis
+- `reports/Regression_withYOLO/sensitivity_analysis.csv` - Robustness check results
 - Computes mAP50, mAP50-95, precision, recall, F1 scores
 - Generates confusion matrix and class-specific metrics
 - Saves detailed evaluation reports (JSON, CSV)
@@ -374,7 +443,7 @@ berlin-road-crash/
 1. **Crash data (2016–2024)**: download Berlin Unfallatlas (https://unfallatlas.statistikportal.de)
 2. **Mapillary metadata**: query API v4 for Berlin bounding box and years 2004–2024
 3. **OSM roads**: download Berlin extract (PBF/GeoJSON)
-4. **Tiles**: create **200 m** hex or square grid in EPSG:25833 covering Berlin
+4. **Tiles**: create **15 m** hex or square grid in EPSG:25833 covering Berlin
 5. **Spatial joins**: images → tiles, crash points → tiles
 6. **Coverage controls**: compute `images_per_tile_year` to control for sampling bias
 
@@ -446,13 +515,35 @@ python src/modeling/prepare_cnn_dataset.py
 
 ### 2. CNN Training
 ```bash
-python src/modeling/train_cnn_residual.py [--max_epochs 4 --batch_size 8]
+# Normal training (26 epochs with progressive resizing)
+python src/modeling/train_cnn_residual.py [--max_epochs 26 --batch_size 16]
+
+# Resume from checkpoint (if training was interrupted)
+python src/modeling/train_cnn_residual.py --resume [--max_epochs 26]
 ```
 - ResNet18 architecture with regression head (predicts residual, not crash directly)
-- Two-phase training: frozen backbone (epochs 1-2) then fine-tuning (epochs 3+)
+- **Three-phase training**: frozen backbone → fine-tuning → progressive resizing
+  * Phase 1 (epochs 1-6): Frozen backbone at 224x224
+  * Phase 2 (epochs 7-14): Fine-tuning at 224x224
+  * Phase 3 (epochs 15-26): Progressive resizing to 424x424 for better detail
+- **Persistent disk caching**: All images cached to disk on first run (much faster than URL loading)
+- **Multiprocessing**: Uses 4 parallel workers for faster data loading
 - Uses MPS on Apple Silicon for faster training
+- **Checkpoint resuming**: Use `--resume` flag to continue from last saved checkpoint
 - Early stopping based on validation MSE
 - Saves model in eval mode for Grad-CAM compatibility
+
+**Performance Optimizations:**
+- **Parallel downloads**: 16 concurrent downloads for initial image caching (much faster)
+- **Optimized cache**: Images resized to 224x224 and saved at 85% quality for faster loading
+- **Persistent disk caching**: All images cached to `data/cache/images/` on first run
+- **Subsequent runs**: Load from disk cache (100x faster than URL downloads)
+- **Multiprocessing**: 4 parallel workers for data loading during training
+- **Prefetching**: Prefetch 2 batches ahead for smoother training
+- **Larger batch size**: Default 16 (was 8) for faster training
+- **Checkpoint saving**: After every epoch for easy resuming
+- **Progressive resizing**: 224x224 (fast) → 424x424 (detailed) for optimal training
+- **Improved early stopping**: 8 epochs patience (was 3) for better learning
 
 ### 3. Visualization
 ```bash

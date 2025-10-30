@@ -15,7 +15,7 @@ Functionality:
 - Handles missing data appropriately (categorical → "missing", numeric → median)
 - Builds preprocessing pipeline with one-hot encoding for categoricals
 - Trains logistic regression model on train split only
-- Evaluates on validation split (precision, recall, F1, ROC AUC)
+- Evaluates on all splits with test set as primary metrics (precision, recall, F1, ROC AUC)
 - Computes residuals for train/val/test splits
 - Saves enriched datasets with residuals
 - Saves trained model pipeline and metadata
@@ -44,7 +44,7 @@ import numpy as np
 from pathlib import Path
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -154,18 +154,91 @@ def define_features():
     boolean_features = ['is_intersection', 'near_traffic_signal']
     
     # Numeric features (float64 type)
+    # Note: intersection_degree excluded as it's constant (always 0)
     numeric_features = [
-        'road_segment_length_m', 'maxspeed', 'lanes', 'width', 'intersection_degree'
+        'road_segment_length_m', 'maxspeed', 'lanes', 'width'
     ]
     
     # Excluded features (to avoid leakage)
     excluded_features = [
         'lon', 'lat', 'amount_of_matches', 'crash_years', 'captured_at_years',
         'amount_of_images', 'list_of_thumb_1024_url', 'list_of_point_ids',
-        'cluster_id', 'osm_way_id', 'split', 'match_label'
+        'cluster_id', 'osm_way_id', 'split', 'match_label', 'intersection_degree'
     ]
     
     return categorical_features, boolean_features, numeric_features, excluded_features
+
+
+def remove_constant_features(df, feature_cols):
+    """
+    Remove features that are constant (zero variance).
+    
+    Parameters:
+        df: DataFrame to analyze
+        feature_cols: List of feature column names
+        
+    Returns:
+        list: List of features to keep (non-constant)
+    """
+    constant_features = []
+    
+    for col in feature_cols:
+        if col in df.columns:
+            unique_values = df[col].nunique()
+            if unique_values <= 1:
+                constant_features.append(col)
+                print(f"  Removed constant feature: {col} (unique values: {unique_values})")
+            else:
+                # Check for practical constant (all values same except one)
+                value_counts = df[col].value_counts()
+                if len(value_counts) == 1:
+                    constant_features.append(col)
+                    print(f"  Removed constant feature: {col}")
+    
+    features_to_keep = [f for f in feature_cols if f not in constant_features]
+    
+    return features_to_keep, constant_features
+
+
+def detect_separation(df, feature_cols, target_col='match_label'):
+    """
+    Detect features that exhibit complete separation.
+    A feature has complete separation if one of its values perfectly predicts the target.
+    
+    Parameters:
+        df: DataFrame to analyze
+        feature_cols: List of feature column names
+        target_col: Name of target column
+        
+    Returns:
+        dict: Dictionary with separation information
+    """
+    separation_issues = {}
+    
+    for col in feature_cols:
+        if col in df.columns:
+            # Group by feature value and check target distribution
+            groups = df.groupby(col)[target_col].agg(['count', 'sum', 'nunique'])
+            
+            # Check for complete separation
+            for val, row in groups.iterrows():
+                # If all samples have same target value
+                if row['nunique'] == 1 and row['count'] > 0:
+                    if col not in separation_issues:
+                        separation_issues[col] = []
+                    separation_issues[col].append({
+                        'value': val,
+                        'count': row['count'],
+                        'target': int(row['sum'] / row['count'])
+                    })
+    
+    # Print summary
+    if len(separation_issues) > 0:
+        print(f"\n  WARNING: Found {len(separation_issues)} features with complete separation:")
+        for col, issues in separation_issues.items():
+            print(f"    {col}: {len(issues)} problematic value groups")
+    
+    return separation_issues
 
 
 def handle_missing_data(train_df, val_df, test_df, categorical_features, 
@@ -248,9 +321,9 @@ def build_preprocessing_pipeline(categorical_features, boolean_features, numeric
         ('onehot', OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore'))
     ])
     
-    # Numeric preprocessing: pass through (missing values already handled)
+    # Numeric preprocessing: standardize (missing values already handled)
     numeric_transformer = Pipeline(steps=[
-        ('passthrough', 'passthrough')
+        ('scaler', StandardScaler())
     ])
     
     # Combine transformers
@@ -269,6 +342,126 @@ def build_preprocessing_pipeline(categorical_features, boolean_features, numeric
     return preprocessor
 
 
+def get_feature_names(categorical_features, boolean_features, numeric_features, preprocessor):
+    """
+    Get feature names after one-hot encoding.
+    
+    Parameters:
+        categorical_features: List of categorical feature names
+        boolean_features: List of boolean feature names
+        numeric_features: List of numeric feature names
+        preprocessor: Fitted preprocessor pipeline
+        
+    Returns:
+        list: Feature names after encoding
+    """
+    feature_names = []
+    all_categorical = categorical_features + boolean_features
+    
+    # Get categorical feature names from one-hot encoder
+    cat_transformer = preprocessor.transformers_[0][1]
+    onehot = cat_transformer.named_steps['onehot']
+    
+    # Categorical feature names
+    for i, feat in enumerate(all_categorical):
+        categories = onehot.categories_[i]
+        # Drop first category (due to drop='first')
+        for cat in categories[1:]:
+            feature_names.append(f"{feat}={cat}")
+    
+    # Numeric feature names
+    feature_names.extend(numeric_features)
+    
+    return feature_names
+
+
+def remove_constant_post_encoding(X_processed, feature_names):
+    """
+    Remove constant columns after one-hot encoding.
+    
+    Parameters:
+        X_processed: Preprocessed feature matrix
+        feature_names: List of feature names after encoding
+        
+    Returns:
+        tuple: (X_cleaned, feature_names_cleaned, removed_features)
+    """
+    import pandas as pd
+    
+    # Convert to DataFrame for easier column selection
+    X_df = pd.DataFrame(X_processed, columns=feature_names)
+    
+    # Find constant columns
+    constant_cols = [col for col in X_df.columns if X_df[col].nunique() <= 1]
+    
+    if len(constant_cols) > 0:
+        print(f"\n  Removing {len(constant_cols)} constant columns after encoding:")
+        for col in constant_cols[:10]:  # Show first 10
+            print(f"    - {col}")
+        if len(constant_cols) > 10:
+            print(f"    ... and {len(constant_cols) - 10} more")
+        
+        # Remove constant columns
+        X_df_cleaned = X_df.drop(columns=constant_cols)
+        feature_names_cleaned = [f for f in feature_names if f not in constant_cols]
+        
+        return X_df_cleaned.values, feature_names_cleaned, constant_cols
+    else:
+        return X_processed, feature_names, []
+
+
+def remove_highly_correlated_features(X_processed, feature_names, threshold=0.7):
+    """
+    Remove highly correlated features.
+    
+    Parameters:
+        X_processed: Preprocessed feature matrix
+        feature_names: List of feature names
+        threshold: Correlation threshold (default 0.7)
+        
+    Returns:
+        tuple: (X_cleaned, feature_names_cleaned, removed_features)
+    """
+    import pandas as pd
+    import numpy as np
+    
+    # Convert to DataFrame
+    X_df = pd.DataFrame(X_processed, columns=feature_names)
+    
+    # Compute correlation matrix
+    corr_matrix = X_df.corr().abs()
+    
+    # Find pairs with correlation > threshold
+    high_corr_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i+1, len(corr_matrix.columns)):
+            if corr_matrix.iloc[i, j] > threshold:
+                high_corr_pairs.append({
+                    'feature1': corr_matrix.columns[i],
+                    'feature2': corr_matrix.columns[j],
+                    'corr': corr_matrix.iloc[i, j]
+                })
+    
+    # Remove one feature from each highly correlated pair
+    features_to_remove = set()
+    if len(high_corr_pairs) > 0:
+        print(f"\n  Found {len(high_corr_pairs)} highly correlated pairs (>{threshold}):")
+        for pair in high_corr_pairs[:10]:  # Show first 10
+            print(f"    {pair['feature1']} <-> {pair['feature2']}: {pair['corr']:.3f}")
+            # Remove the second feature (arbitrary choice)
+            features_to_remove.add(pair['feature2'])
+        if len(high_corr_pairs) > 10:
+            print(f"    ... and {len(high_corr_pairs) - 10} more pairs")
+        
+        print(f"\n  Removing {len(features_to_remove)} features to eliminate high correlations")
+        X_df_cleaned = X_df.drop(columns=list(features_to_remove))
+        feature_names_cleaned = [f for f in feature_names if f not in features_to_remove]
+        
+        return X_df_cleaned.values, feature_names_cleaned, list(features_to_remove)
+    else:
+        return X_processed, feature_names, []
+
+
 def train_model(train_df, val_df, categorical_features, boolean_features, 
                 numeric_features, preprocessor):
     """
@@ -283,7 +476,7 @@ def train_model(train_df, val_df, categorical_features, boolean_features,
         preprocessor: ColumnTransformer preprocessing pipeline
         
     Returns:
-        tuple: (model, full_pipeline) - Trained model and complete pipeline
+        tuple: (model, full_pipeline, X_train_processed, X_val_processed, feature_names)
     """
     print("\n" + "=" * 80)
     print("TRAINING LOGISTIC REGRESSION MODEL")
@@ -309,26 +502,24 @@ def train_model(train_df, val_df, categorical_features, boolean_features,
     print(f"  Train features after encoding: {X_train_processed.shape[1]} columns")
     print(f"  Val features after encoding: {X_val_processed.shape[1]} columns")
     
-    # Train logistic regression
-    print("\nTraining logistic regression model...")
+    # Train logistic regression with L2 regularization to handle separation
+    print("\nTraining logistic regression model with L2 regularization...")
     model = LogisticRegression(
         max_iter=1000,
         random_state=42,
         solver='lbfgs',
-        class_weight='balanced'  # Handle class imbalance
+        class_weight='balanced',  # Handle class imbalance
+        C=1.0,  # L2 regularization strength (inverse of lambda)
+        penalty='l2'
     )
     
     model.fit(X_train_processed, y_train)
     
-    # Build full pipeline
-    full_pipeline = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('model', model)
-    ])
-    
     print("✓ Model training complete")
     
-    return model, full_pipeline, preprocessor, X_train_processed, X_val_processed
+    # Note: We return feature_names for potential use, but the pipeline 
+    # still uses the original preprocessing
+    return model, preprocessor, X_train_processed, X_val_processed
 
 
 def evaluate_model(model, X_processed, y, split_name="Validation"):
@@ -395,6 +586,45 @@ def evaluate_model(model, X_processed, y, split_name="Validation"):
         }
     
     return metrics
+
+
+def find_optimal_threshold(y_true, y_proba, criterion='f1'):
+    """
+    Find optimal probability threshold on validation set.
+    criterion: 'f1' or 'youden' (sensitivity + specificity - 1)
+    """
+    thresholds = np.linspace(0.01, 0.99, 99)
+    best_thr, best_score = 0.5, -1.0
+    for thr in thresholds:
+        y_pred = (y_proba >= thr).astype(int)
+        if criterion == 'f1':
+            score = f1_score(y_true, y_pred)
+        else:
+            from sklearn.metrics import recall_score
+            tp = ((y_pred == 1) & (y_true == 1)).sum()
+            tn = ((y_pred == 0) & (y_true == 0)).sum()
+            fp = ((y_pred == 1) & (y_true == 0)).sum()
+            fn = ((y_pred == 0) & (y_true == 1)).sum()
+            sens = tp / (tp + fn + 1e-12)
+            spec = tn / (tn + fp + 1e-12)
+            score = sens + spec - 1.0
+        if score > best_score:
+            best_score = score
+            best_thr = thr
+    return best_thr, best_score
+
+
+def evaluate_with_threshold(model, X_processed, y, threshold, split_name="Validation"):
+    y_proba = model.predict_proba(X_processed)[:, 1]
+    y_pred = (y_proba >= threshold).astype(int)
+    return {
+        'accuracy': accuracy_score(y, y_pred),
+        'precision': precision_score(y, y_pred),
+        'recall': recall_score(y, y_pred),
+        'f1_score': f1_score(y, y_pred),
+        'roc_auc': roc_auc_score(y, y_proba),
+        'threshold': threshold
+    }
 
 
 def evaluate_all_splits(full_pipeline, train_df, val_df, test_df,
@@ -477,13 +707,21 @@ def create_comparison_visualizations(all_metrics, output_dir):
     x = np.arange(len(splits))
     width = 0.15
     
+    # Define colors with test set highlighted
+    colors = ['#3498db', '#e74c3c', '#f39c12']  # train (blue), val (red), test (orange)
+    
     for i, metric in enumerate(['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC AUC']):
         values = metrics_df[metric].values
-        ax.bar(x + i * width, values, width, label=metric, alpha=0.8)
+        bars = ax.bar(x + i * width, values, width, label=metric, alpha=0.8, color=colors, edgecolor='white', linewidth=0.5)
+        
+        # Highlight test set bars
+        test_bars = bars[2]  # Test is at index 2
+        test_bars.set_edgecolor('#2c3e50')  # Dark blue edge
+        test_bars.set_linewidth(2)
     
     ax.set_xlabel('Split', fontsize=12, fontweight='bold')
     ax.set_ylabel('Score', fontsize=12, fontweight='bold')
-    ax.set_title('Baseline Logistic Regression: Metrics Comparison Across Splits', 
+    ax.set_title('Baseline Logistic Regression: Metrics Comparison Across Splits (Test Set Highlighted)', 
                 fontsize=14, fontweight='bold')
     ax.set_xticks(x + width * 2)
     ax.set_xticklabels(splits)
@@ -495,8 +733,9 @@ def create_comparison_visualizations(all_metrics, output_dir):
     for i, metric in enumerate(['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC AUC']):
         values = metrics_df[metric].values
         for j, v in enumerate(values):
+            color = '#2c3e50' if j == 2 else 'black'  # Highlight test values
             ax.text(j + i * width, v + 0.01, f'{v:.3f}', 
-                   ha='center', va='bottom', fontsize=9)
+                   ha='center', va='bottom', fontsize=9, color=color, fontweight='bold' if j == 2 else 'normal')
     
     plt.tight_layout()
     fig.savefig(output_dir / 'metrics_comparison_bars.png', bbox_inches='tight')
@@ -507,12 +746,15 @@ def create_comparison_visualizations(all_metrics, output_dir):
     fig, ax = plt.subplots(figsize=(12, 7))
     
     for metric in ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC AUC']:
-        ax.plot(splits, metrics_df[metric].values, marker='o', linewidth=2, 
+        line = ax.plot(splits, metrics_df[metric].values, marker='o', linewidth=2, 
                label=metric, markersize=8)
+        # Highlight test point
+        ax.plot(splits[2], metrics_df[metric].values[2], marker='o', markersize=12, 
+               color=line[0].get_color(), markeredgecolor='#2c3e50', markeredgewidth=2)
     
     ax.set_xlabel('Split', fontsize=12, fontweight='bold')
     ax.set_ylabel('Score', fontsize=12, fontweight='bold')
-    ax.set_title('Baseline Logistic Regression: Metrics Trends Across Splits', 
+    ax.set_title('Baseline Logistic Regression: Metrics Trends Across Splits (Test Set Highlighted)', 
                 fontsize=14, fontweight='bold')
     ax.legend(loc='best')
     ax.grid(alpha=0.3)
@@ -545,7 +787,7 @@ def create_comparison_visualizations(all_metrics, output_dir):
                              ha="center", va="center", color="black", fontweight='bold')
         plt.colorbar(im, ax=ax, label='Score')
     
-    ax.set_title('Baseline Logistic Regression: Metrics Heatmap', 
+    ax.set_title('Baseline Logistic Regression: Metrics Heatmap (Test Set as Primary)', 
                 fontsize=14, fontweight='bold')
     ax.set_xlabel('Split', fontsize=12, fontweight='bold')
     ax.set_ylabel('Metric', fontsize=12, fontweight='bold')
@@ -567,12 +809,16 @@ def create_comparison_visualizations(all_metrics, output_dir):
         'ROC AUC': 'ROC AUC'
     }
     
-    colors = ['steelblue', 'coral', 'lightgreen']
+    colors = ['#3498db', '#e74c3c', '#f39c12']  # train (blue), val (red), test (orange)
     
     for i, (metric_key, metric_label) in enumerate(metrics_dict.items()):
         ax = axes[i]
         values = metrics_df[metric_key].values
-        bars = ax.bar(splits, values, alpha=0.8, color=colors, edgecolor='black')
+        bars = ax.bar(splits, values, alpha=0.8, color=colors, edgecolor='white', linewidth=0.5)
+        
+        # Highlight test bar
+        bars[2].set_edgecolor('#2c3e50')  # Dark blue edge
+        bars[2].set_linewidth(2)
         
         ax.set_ylabel('Score', fontsize=11, fontweight='bold')
         ax.set_title(f'{metric_label}', fontsize=12, fontweight='bold')
@@ -582,8 +828,11 @@ def create_comparison_visualizations(all_metrics, output_dir):
         # Add value labels
         for j, (bar, val) in enumerate(zip(bars, values)):
             height = bar.get_height()
+            color = '#2c3e50' if j == 2 else 'black'
+            weight = 'bold' if j == 2 else 'normal'
             ax.text(bar.get_x() + bar.get_width()/2., height + 0.02,
-                   f'{val:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+                   f'{val:.3f}', ha='center', va='bottom', fontsize=10, 
+                   fontweight=weight, color=color)
     
     # Remove empty subplot
     fig.delaxes(axes[5])
@@ -765,9 +1014,11 @@ def save_model(full_pipeline, preprocessor, model, categorical_features,
             'max_iter': 1000,
             'random_state': 42,
             'solver': 'lbfgs',
-            'class_weight': 'balanced'
+            'class_weight': 'balanced',
+            'penalty': 'l2',
+            'C': 1.0
         },
-        'validation_metrics': metrics,
+        'test_metrics': metrics,
         'feature_names': feature_names,
         'coefficients': coefficients.tolist(),
         'intercept': float(model.intercept_[0])
@@ -778,6 +1029,136 @@ def save_model(full_pipeline, preprocessor, model, categorical_features,
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
     print(f"  ✓ Saved metadata to {metadata_path}")
+
+
+def compute_statistical_summary(model, X_train_processed, y_train, feature_names):
+    """
+    Compute statistical summary including standard errors, z-scores, and p-values.
+    
+    Note: This is an approximation using the Hessian matrix approach.
+    For exact statistics, use statsmodels instead.
+    
+    Parameters:
+        model: Trained logistic regression model
+        X_train_processed: Preprocessed training features
+        y_train: Training labels
+        feature_names: List of feature names
+        
+    Returns:
+        dict: Dictionary with statistical summaries
+    """
+    from scipy import stats
+    from scipy.special import expit
+    import numpy as np
+    
+    # Get predictions
+    y_pred_proba = model.predict_proba(X_train_processed)[:, 1]
+    
+    # Compute Hessian matrix (approximation for variance)
+    # For logistic regression, the Hessian is: X^T * diag(p_i * (1-p_i)) * X
+    W = y_pred_proba * (1 - y_pred_proba)  # weights
+    X_weighted = X_train_processed * np.sqrt(W[:, np.newaxis])
+    
+    try:
+        # Compute covariance matrix: inv(X^T * W * X)
+        Hessian = X_weighted.T @ X_weighted
+        cov_matrix = np.linalg.inv(Hessian)
+        
+        # Standard errors are sqrt of diagonal of covariance matrix
+        se = np.sqrt(np.diag(cov_matrix))
+        
+        # Z-scores
+        z_scores = model.coef_[0] / se
+        
+        # P-values (two-tailed test)
+        p_values = 2 * (1 - stats.norm.cdf(np.abs(z_scores)))
+        
+    except np.linalg.LinAlgError:
+        print("  WARNING: Could not compute statistical summary (singular matrix)")
+        se = np.full(len(feature_names), np.nan)
+        z_scores = np.full(len(feature_names), np.nan)
+        p_values = np.full(len(feature_names), np.nan)
+    
+    # Create summary
+    summary = pd.DataFrame({
+        'feature': feature_names,
+        'coefficient': model.coef_[0],
+        'std_error': se,
+        'z_score': z_scores,
+        'p_value': p_values,
+        'significant': p_values < 0.05  # 5% significance level
+    })
+    
+    return summary, cov_matrix if 'cov_matrix' in locals() else None
+
+
+def generate_statistical_report(model, X_train_processed, y_train, 
+                                categorical_features, boolean_features, 
+                                numeric_features, preprocessor, output_dir):
+    """
+    Generate comprehensive statistical report with p-values and standard errors.
+    
+    Parameters:
+        model: Trained logistic regression model
+        X_train_processed: Preprocessed training features
+        y_train: Training labels
+        categorical_features: List of categorical feature names
+        boolean_features: List of boolean feature names
+        numeric_features: List of numeric feature names
+        preprocessor: Preprocessing pipeline
+        output_dir: Output directory path
+    """
+    print("\n" + "=" * 80)
+    print("GENERATING STATISTICAL SUMMARY")
+    print("=" * 80)
+    
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Get feature names
+    all_categorical = categorical_features + boolean_features
+    feature_names = []
+    
+    cat_transformer = preprocessor.transformers_[0][1]
+    onehot = cat_transformer.named_steps['onehot']
+    
+    for i, feat in enumerate(all_categorical):
+        categories = onehot.categories_[i]
+        for cat in categories[1:]:
+            feature_names.append(f"{feat}={cat}")
+    
+    feature_names.extend(numeric_features)
+    
+    # Compute statistical summary
+    summary_df, cov_matrix = compute_statistical_summary(
+        model, X_train_processed, y_train, feature_names
+    )
+    
+    # Sort by p-value
+    summary_df = summary_df.sort_values('p_value')
+    
+    # Save statistical report
+    report_path = output_dir / 'baseline_logistic_regression_statistics.csv'
+    summary_df.to_csv(report_path, index=False)
+    print(f"  ✓ Saved statistical report to {report_path}")
+    
+    # Print significant features
+    significant = summary_df[summary_df['significant'] == True]
+    print(f"\nSignificant features (p < 0.05): {len(significant)} out of {len(summary_df)}")
+    
+    if len(significant) > 0:
+        print("\nTop 10 most significant features:")
+        for idx, row in significant.head(10).iterrows():
+            star = "***" if row['p_value'] < 0.001 else "**" if row['p_value'] < 0.01 else "*"
+            print(f"  {row['feature']:40s} β={row['coefficient']:7.4f} "
+                  f"SE={row['std_error']:7.4f} p={row['p_value']:.4f} {star}")
+    
+    # Save covariance matrix if available
+    if cov_matrix is not None:
+        cov_df = pd.DataFrame(cov_matrix, index=feature_names, columns=feature_names)
+        cov_path = output_dir / 'baseline_logistic_regression_covariance_matrix.csv'
+        cov_df.to_csv(cov_path)
+        print(f"  ✓ Saved covariance matrix to {cov_path}")
 
 
 def generate_coefficient_report(preprocessor, model, categorical_features, 
@@ -869,6 +1250,27 @@ def main():
     # Step 2: Define features
     categorical_features, boolean_features, numeric_features, excluded_features = define_features()
     
+    # Step 2.5: Remove constant features
+    print("\n" + "=" * 80)
+    print("REMOVING CONSTANT FEATURES")
+    print("=" * 80)
+    all_features = categorical_features + boolean_features + numeric_features
+    feature_cols, constant_features = remove_constant_features(train_df, all_features)
+    
+    # Update feature lists
+    categorical_features = [f for f in categorical_features if f in feature_cols]
+    boolean_features = [f for f in boolean_features if f in feature_cols]
+    numeric_features = [f for f in numeric_features if f in feature_cols]
+    
+    # Step 2.6: Detect complete separation issues
+    print("\n" + "=" * 80)
+    print("DETECTING COMPLETE SEPARATION ISSUES")
+    print("=" * 80)
+    separation_info = detect_separation(train_df, feature_cols, 'match_label')
+    
+    if len(separation_info) > 0:
+        print(f"\n  Note: L2 regularization will be used to handle separation issues")
+    
     # Step 3: Handle missing data
     train_df, val_df, test_df = handle_missing_data(
         train_df, val_df, test_df, 
@@ -881,13 +1283,31 @@ def main():
     )
     
     # Step 5: Train model
-    model, full_pipeline, preprocessor, X_train_processed, X_val_processed = train_model(
+    model, preprocessor, X_train_processed, X_val_processed = train_model(
         train_df, val_df, categorical_features, boolean_features, 
         numeric_features, preprocessor
     )
     
+    # Build full pipeline for later use
+    from sklearn.pipeline import Pipeline
+    full_pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('model', model)
+    ])
+    
     # Step 6: Evaluate on validation
-    val_metrics = evaluate_model(model, X_val_processed, val_df['match_label'].astype(int))
+    val_y = val_df['match_label'].astype(int)
+    val_metrics = evaluate_model(model, X_val_processed, val_y)
+
+    # Step 6.1: Threshold optimization on validation
+    print("\n" + "=" * 80)
+    print("THRESHOLD OPTIMIZATION (Validation-based)")
+    print("=" * 80)
+    val_proba = model.predict_proba(X_val_processed)[:, 1]
+    thr_f1, score_f1 = find_optimal_threshold(val_y, val_proba, criterion='f1')
+    thr_youden, score_youden = find_optimal_threshold(val_y, val_proba, criterion='youden')
+    print(f"  Optimal threshold (F1):     {thr_f1:.2f} (F1={score_f1:.4f})")
+    print(f"  Optimal threshold (Youden): {thr_youden:.2f} (J={score_youden:.4f})")
     
     # Step 7: Compute residuals
     train_df, val_df, test_df = compute_residuals(
@@ -901,15 +1321,39 @@ def main():
         categorical_features, boolean_features, numeric_features,
         VIZ_DIR
     )
+
+    # Step 8.1: Evaluate test at optimized thresholds
+    print("\n" + "=" * 80)
+    print("EVALUATE TEST AT OPTIMIZED THRESHOLDS")
+    print("=" * 80)
+    # Build processed features for val/test via pipeline
+    val_X = val_df[(categorical_features + boolean_features + numeric_features)]
+    test_X = test_df[(categorical_features + boolean_features + numeric_features)]
+    val_proc = full_pipeline.named_steps['preprocessor'].transform(val_X)
+    test_proc = full_pipeline.named_steps['preprocessor'].transform(test_X)
+    test_y = test_df['match_label'].astype(int)
+    test_at_f1 = evaluate_with_threshold(model, test_proc, test_y, thr_f1, split_name='Test@F1')
+    test_at_youden = evaluate_with_threshold(model, test_proc, test_y, thr_youden, split_name='Test@Youden')
+    # Save CSV
+    opt_df = pd.DataFrame([
+        {'Split':'Val','Criterion':'F1','threshold':thr_f1,'F1_or_J':score_f1},
+        {'Split':'Val','Criterion':'Youden','threshold':thr_youden,'F1_or_J':score_youden},
+        {'Split':'Test','Criterion':'F1','threshold':test_at_f1['threshold'],'accuracy':test_at_f1['accuracy'],'precision':test_at_f1['precision'],'recall':test_at_f1['recall'],'f1_score':test_at_f1['f1_score'],'roc_auc':test_at_f1['roc_auc']},
+        {'Split':'Test','Criterion':'Youden','threshold':test_at_youden['threshold'],'accuracy':test_at_youden['accuracy'],'precision':test_at_youden['precision'],'recall':test_at_youden['recall'],'f1_score':test_at_youden['f1_score'],'roc_auc':test_at_youden['roc_auc']}
+    ])
+    Path(VIZ_DIR).mkdir(parents=True, exist_ok=True)
+    (Path(VIZ_DIR) / 'baseline_threshold_optimization.csv').write_text(opt_df.to_csv(index=False))
+    print(f"  ✓ Saved threshold optimization to {Path(VIZ_DIR) / 'baseline_threshold_optimization.csv'}")
     
     # Step 9: Save enriched datasets
     save_enriched_datasets(train_df, val_df, test_df, DATA_DIR)
     
-    # Step 10: Save model and metadata (use validation metrics for backward compatibility)
+    # Step 10: Save model and metadata (use test metrics as primary)
+    test_metrics = all_metrics['test']
     save_model(
         full_pipeline, preprocessor, model, 
         categorical_features, boolean_features, numeric_features,
-        val_metrics, MODELS_DIR
+        test_metrics, MODELS_DIR
     )
     
     # Step 11: Generate coefficient report
@@ -917,6 +1361,13 @@ def main():
         preprocessor, model, 
         categorical_features, boolean_features, numeric_features,
         REPORTS_DIR
+    )
+    
+    # Step 12: Generate statistical summary (p-values, standard errors, etc.)
+    generate_statistical_report(
+        model, X_train_processed, train_df['match_label'].astype(int),
+        categorical_features, boolean_features, numeric_features, 
+        preprocessor, REPORTS_DIR
     )
     
     print("\n" + "=" * 80)
@@ -927,13 +1378,25 @@ def main():
     print(f"  - Model pipeline saved to models/baseline_logistic_regression.pkl")
     print(f"  - Metadata saved to models/baseline_logistic_regression_metadata.json")
     print(f"  - Coefficient report saved to reports/baseline_logistic_regression_coefficients.csv")
+    print(f"  - Statistical summary saved to reports/baseline_logistic_regression_statistics.csv")
+    print(f"  - Covariance matrix saved to reports/baseline_logistic_regression_covariance_matrix.csv")
     print(f"  - Visualizations saved to reports/Regression_beforeCNN/")
-    print(f"\nAll splits metrics:")
+    print(f"\nAll splits metrics (Test set highlighted as primary):")
     print(f"  {'Split':<10} {'Accuracy':<10} {'Precision':<10} {'Recall':<10} {'F1-Score':<10} {'ROC AUC':<10}")
     print(f"  {'-'*70}")
     for split_name in ['train', 'val', 'test']:
         m = all_metrics[split_name]
-        print(f"  {split_name:<10} {m['accuracy']:<10.4f} {m['precision']:<10.4f} {m['recall']:<10.4f} {m['f1_score']:<10.4f} {m['roc_auc']:<10.4f}")
+        highlight = "***" if split_name == 'test' else ""
+        print(f"  {split_name:<10} {m['accuracy']:<10.4f} {m['precision']:<10.4f} {m['recall']:<10.4f} {m['f1_score']:<10.4f} {m['roc_auc']:<10.4f} {highlight}")
+    
+    # Print primary test metrics summary
+    test_m = all_metrics['test']
+    print(f"\n*** PRIMARY TEST METRICS ***")
+    print(f"  Test Accuracy:  {test_m['accuracy']:.4f}")
+    print(f"  Test Precision: {test_m['precision']:.4f}")
+    print(f"  Test Recall:    {test_m['recall']:.4f}")
+    print(f"  Test F1-Score:  {test_m['f1_score']:.4f}")
+    print(f"  Test ROC AUC:   {test_m['roc_auc']:.4f}")
 
 
 if __name__ == "__main__":

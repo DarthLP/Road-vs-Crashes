@@ -36,13 +36,24 @@ This is a comprehensive technical specification for executing a 3-day end-to-end
 ### Visual Feature Detection
 - **Models**: YOLOv8s finetuned on RDD2022 Czech + Norway subset for road damage detection
 - **Dataset**: 10,990 images (Czech Republic + Norway) compressed to 1024x768 pixels
-- **Test Dataset**: USA images from RDD2022 for independent evaluation (excluding Czech, Norway, and drone data)
+- **Test Dataset**: Czech + Norway images from RDD2022 for evaluation (1,633 test images)
 - **Classes**: crack (consolidated), other corruption, Pothole
 - **Compression**: 82.6% size reduction (8.4GB → 1.5GB) matching Mapillary quality
 - **Features**: pothole_count, defect_area_ratio, damaged_sign_count, litter_count, green_pixels_ratio, vehicle_count
 - **Sampling**: Up to k=1000 images per tile per year from tiles with ≥N images/year
 - **Training Pipeline**: RDD2022 → Czech/Norway filtering → image compression → YOLO format → YOLOv8s finetuning → inference
-- **Test Pipeline**: RDD2022 → USA filtering → image compression → test split added to dataset structure
+- **Test Pipeline**: RDD2022 → Czech/Norway filtering → image compression → test split added to dataset structure
+
+### CNN Residual Augmentation Evaluation
+- **Objective**: Quantify added value of CNN residual predictor beyond baseline logistic probabilities (and YOLO-enhanced).
+- **Method**:
+  - Correlate CNN predicted residuals with true residuals on Test.
+  - Fit augmentation logistic regression on Val: Crash ~ p_baseline + yhat_CNN (and YOLO variant).
+  - Evaluate on Test: ΔAUC and ΔMcFadden pseudo-R²; thresholds (0.5, Val-opt F1, Val-opt Youden) → accuracy/precision/recall/F1/ROC AUC.
+- **Artifacts**:
+  - Script: `src/modeling/evaluate_cnn_augmentation.py`
+  - Outputs: CSV summaries under `reports/CNN/` and figures under `reports/Comparison_Baseline_vs_YOLO/`.
+  - Usage: `conda activate berlin-road-crash && python src/modeling/evaluate_cnn_augmentation.py --use_saved_preds`
 
 ### OSM Infrastructure Enrichment
 - **Data Source**: Berlin OSM extract from Geofabrik (.pbf format)
@@ -150,6 +161,19 @@ def fetch_all_pages(base_url, params):
 - **Residuals**: Computed as `actual_label - predicted_probability` for CNN regression target
 - **Purpose**: Establish baseline explainable by structured data; residuals capture visual risk
 
+### Enhanced Model with YOLO Features (Implemented)
+- **Model Type**: Logistic Regression (binary classification) + YOLO visual features
+- **Target**: `match_label` (same as baseline)
+- **Features**: All baseline features + `street_quality_roi_winz` (primary YOLO feature)
+- **YOLO Feature Extraction**:
+  - ROI Filtering: Trapezoid mask (bottom 60% of image, 70% width) to focus on road area
+  - Per-Image Metrics: count_roi, ratio_roi, percent_roi, density (per ROI megapixel)
+  - Per-Cluster Aggregation: Median percent_roi → street_quality_roi, IQR, image count
+  - Winsorization: 1%/99% tails per split independently to reduce outlier impact
+- **Preprocessing**: Same as baseline + YOLO feature standardization
+- **Performance**: Compared against baseline on train/test splits
+- **Purpose**: Test if visual street quality adds predictive signal beyond infrastructure attributes
+
 ### Target Variables (Planned)
 - **Primary**: Annual crash counts per tile (Poisson/Negative Binomial)
 - **Secondary**: Crash rates per road length
@@ -173,6 +197,23 @@ features = ['highway', 'surface', 'lit', 'cycleway', 'sidewalk', 'oneway',
 
 # Model: LogisticRegression with class_weight='balanced'
 # Residuals: actual_label - predicted_probability (CNN target)
+```
+
+**Enhanced Logistic Regression with YOLO (Implemented)**:
+```python
+# Features: baseline + YOLO visual features
+features = baseline_features + ['street_quality_roi_winz']
+
+# YOLO Feature Extraction:
+# 1. Extract first URL from list_of_thumb_1024_url per cluster
+# 2. Run YOLO inference (imgsz=416, conf=0.25, iou=0.45)
+# 3. Apply trapezoid ROI mask (bottom 60%, 70% width)
+# 4. Compute per-image metrics: count_roi, ratio_roi, percent_roi, density
+# 5. Aggregate per-cluster: median percent_roi → street_quality_roi
+# 6. Winsorize per split: 1%/99% tails → street_quality_roi_winz
+
+# Model: Same LogisticRegression as baseline + YOLO feature
+# Comparison: Train vs Train, Test vs Test performance
 ```
 
 **Planned Models**:
@@ -304,7 +345,19 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
    - ✅ Output: `reports/CNN/figures/` (loss curves, scatter plots, high-risk image gallery)
    - ✅ Purpose: Learn visual safety cues that OSM attributes missed (residual = actual - predicted)
 
-8. **Data Validation**:
+8. **Grad-CAM Interpretability Pipeline**:
+   - ✅ Grad-CAM utility module with batch-safe hooks and memory management
+   - ✅ Support for both Grad-CAM and Grad-CAM++ methods with flexible CLI
+   - ✅ CAM intensity statistics (mean, max, top10 quantile) for correlation analysis
+   - ✅ Contrast normalization and flexible colormap support (jet, turbo)
+   - ✅ Stratified sampling: 5 highest, 5 lowest, 5 median, 5 random residuals
+   - ✅ Automatic 3×4 panel grid generation for quartile analysis
+   - ✅ Comprehensive markdown report with statistical insights and interpretations
+   - ✅ Output: `reports/CNN/gradcam/` (heatmaps, overlays, grids, metadata CSV)
+   - ✅ Output: `gradcam_analysis_report.md` (quartile analysis, visual patterns, bias detection)
+   - ✅ Purpose: Interpret which visual features drive crash risk predictions beyond OSM attributes
+
+9. **Data Validation**:
    - ✅ Verify spatial coverage and match rates
    - ✅ Check temporal consistency
    - ✅ Assess data quality and generate recommendations
@@ -328,7 +381,7 @@ change_formula = "delta_crashes ~ delta_pothole_count + delta_defect_area_ratio 
    - ✅ Implement YOLOv8 road damage detection pipeline
    - ✅ Convert RDD2022 dataset to YOLO format
    - ✅ Train YOLOv8s model on road damage classes
-   - ✅ Create USA test dataset (500 images for independent evaluation)
+   - ✅ Create test dataset (1,633 Czech + Norway images for evaluation)
    - ✅ Test YOLO model evaluation script with comprehensive metrics
    - Process matched images for infrastructure features using trained model
 

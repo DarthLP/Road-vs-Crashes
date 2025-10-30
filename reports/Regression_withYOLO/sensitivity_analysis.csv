@@ -1,0 +1,8 @@
+yolo_feature,control_feature,n_train,n_test,yolo_coefficient,metrics,description
+street_quality_roi_winz,,8096,1737,-0.10351862978193534,"{'accuracy': 0.6804835924006909, 'precision': 0.13490725126475547, 'recall': 0.6557377049180327, 'f1_score': 0.22377622377622378, 'roc_auc': 0.7421078008425113}",Baseline (winsorized)
+street_quality_roi,,8096,1737,-0.1254511424430509,"{'accuracy': 0.6787564766839378, 'precision': 0.132996632996633, 'recall': 0.6475409836065574, 'f1_score': 0.2206703910614525, 'roc_auc': 0.7422194589656398}",No winsorization
+yolo_damage_density,,8096,1737,-0.06357009263280479,"{'accuracy': 0.6804835924006909, 'precision': 0.13367174280879865, 'recall': 0.6475409836065574, 'f1_score': 0.22159887798036465, 'roc_auc': 0.7412348373344161}",Damage density
+yolo_detections_count_roi,,8096,1737,-0.07552372772468574,"{'accuracy': 0.6799078871617732, 'precision': 0.13344594594594594, 'recall': 0.6475409836065574, 'f1_score': 0.22128851540616246, 'roc_auc': 0.7402400649647262}",Detection count
+street_quality_roi_winz,num_imgs_used,8096,1737,-0.10351862978193534,"{'accuracy': 0.6804835924006909, 'precision': 0.13490725126475547, 'recall': 0.6557377049180327, 'f1_score': 0.22377622377622378, 'roc_auc': 0.7421078008425113}",Baseline + num_imgs_used control
+street_quality_roi,num_imgs_used,8096,1737,-0.1254511424430509,"{'accuracy': 0.6787564766839378, 'precision': 0.132996632996633, 'recall': 0.6475409836065574, 'f1_score': 0.2206703910614525, 'roc_auc': 0.7422194589656398}",No winsor + control
+yolo_damage_density,num_imgs_used,8096,1737,-0.06357009263280479,"{'accuracy': 0.6804835924006909, 'precision': 0.13367174280879865, 'recall': 0.6475409836065574, 'f1_score': 0.22159887798036465, 'roc_auc': 0.7412348373344161}",Density + control
