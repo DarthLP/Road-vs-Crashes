@@ -1,0 +1,34 @@
+{
+  "model_type": "ResNet18",
+  "hyperparameters": {
+    "learning_rate": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "max_epochs": 20,
+    "seed": 42
+  },
+  "training_metrics": {
+    "best_val_mse": 0.08474250283036402,
+    "best_val_mae": 0.20891969464504456,
+    "best_epoch": 20
+  },
+  "test_metrics": {
+    "test_mse": 0.08792915606145277,
+    "test_mae": 0.2063907242294832,
+    "pearson_correlation": 0.2970607280731201,
+    "pearson_p_value": 1.0025436883709815e-36
+  },
+  "architecture": {
+    "backbone": "ResNet18 (pretrained ImageNet)",
+    "head": "Linear(512, 1) - no activation",
+    "output": "Single residual value",
+    "gradcam_target_layer": "layer4[-1]",
+    "progressive_resizing": {
+      "phase_1": "Frozen backbone at 224x224 (epochs 1-6)",
+      "phase_2": "Fine-tuning at 224x224 (epochs 7-14)",
+      "phase_3": "Progressive resizing to 424x424 (epochs 15-20)",
+      "test_resolution": "424x424"
+    },
+    "note": "Model preserves ResNet layer structure for Grad-CAM compatibility. Access layer4[-1] for Grad-CAM visualization."
+  }
+}

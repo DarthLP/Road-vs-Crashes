@@ -1,14 +1,14 @@
-# Berlin Road Condition → Crash Trends (2016–2024)
+# Berlin Road Condition → Crash Trends (2018–2024)
 
-A end‑to‑end reproducible project that links **street‑level infrastructure quality** (from Mapillary images) to **road safety outcomes** (Berlin crash data). This project computes yearly, tile‑level visual indicators (potholes/defects, signage condition, greenery) and tests whether **changes** in those indicators predict **changes** in crash counts.
+A end‑to‑end reproducible project that links **street‑level infrastructure quality** (from Mapillary images) to **road safety outcomes** (Berlin crash data). This project computes cluster‑level visual indicators (potholes/defects, signage condition, greenery) and tests whether those indicators correlate with crash occurrence using a static spatial framework.
 
 ## 🔭 Project Goal
 
-* Build a **time series** (2016–2024) of *visual infrastructure features* for Berlin using openly available street‑level imagery
-* Aggregate features to **1000 m × 1000 m tiles** per year
-* Merge with **annual crash counts** per tile
-* Model **Δ crashes** as a function of **Δ infrastructure features**
-* Deliver maps, metrics, and a brief writeup
+* Build a **cross-sectional spatial model** of *visual infrastructure features* for Berlin using openly available street‑level imagery (2013–2025)
+* Aggregate features to **15 m × 15 m clusters**
+* Merge with **crash occurrence** per cluster (2018–2024, 97,511 total crashes)
+* Model **crash risk** as a function of infrastructure and visual damage features
+* Deliver maps, metrics, and interpretable models
 
 > *Framing:* This is predictive/correlational, not causal. We control for coverage and basic network features to avoid spurious correlations.
 
@@ -17,6 +17,27 @@ A end‑to‑end reproducible project that links **street‑level infrastructure
 ### Prerequisites
 - Python ≥ 3.10
 - Conda for package management
+
+### End-to-End Pipeline Notebook
+
+Run the complete analysis pipeline in a single notebook:
+
+```bash
+# Activate environment
+conda activate berlin-road-crash
+
+# Open the notebook
+jupyter notebook notebooks/End\ to\ End\ Berlin\ Road\ Crash.ipynb
+```
+
+This notebook reproduces the full pipeline:
+- Crash and OSM data integration
+- Baseline (OSM-only) logistic regression
+- YOLO inference and feature extraction
+- Regression with YOLO features and model comparison
+- CNN residual model and Grad-CAM visualization
+
+The notebook intelligently checks for existing outputs to avoid re-running long operations.
 
 ### Grad-CAM Visualization
 Generate interpretability visualizations for the CNN residual predictor:
@@ -80,13 +101,13 @@ Current configuration extracts:
 
 ### Crash Data Processing
 
-The project now includes comprehensive processing and visualization of Berlin traffic accident data (2018-2021):
+The project now includes comprehensive processing and visualization of Berlin traffic accident data (2018-2024):
 
 1. **Data Aggregation:**
    ```bash
    python src/features/aggregate_crashes.py
    ```
-   - Combines 4 years of crash data (50,119 total accidents)
+   - Combines 7 years of crash data (97,511 total crashes)
    - Removes unnecessary columns (LAND, LOR_ab_2021, STRASSE, etc.)
    - Standardizes coordinate formats (keeps UTM LINREFX/LINREFY)
    - Cleans data types and handles German CSV formatting
@@ -110,7 +131,7 @@ python src/features/snap_to_roads.py
 ```
 - Downloads Berlin OSM road network from Geofabrik (.pbf format)
 - Processes road segments with infrastructure attributes
-- Matches crashes and images to nearest road segments (25m threshold)
+- Matches crashes and images to nearest road segments (10 m threshold for OSM snapping)
 - Enriches data with road attributes: highway type, surface, maxspeed, lanes, lighting, etc.
 - Saves enriched data to `data/processed/crashes_with_osm.csv` and `data/processed/mapillary_with_osm.csv`
 
@@ -119,6 +140,7 @@ python src/features/snap_to_roads.py
 - **Image Match Rate**: 50.1% (34,286/68,377 images matched to roads)
 - **Distance Column**: `dist_to_road_m` shows distance to nearest road segment
 - **Coverage**: 1.7% of images outside current OSM bounds (Brandenburg area)
+- **Note**: OSM snapping (10 m) is separate from cluster assignment (15 m point-in-polygon)
 
 ### 4. Coverage Analysis & Reporting
 ```bash
@@ -131,22 +153,23 @@ python src/features/coverage_analysis.py
 - Provides detailed coverage analysis and recommendations
 - Saves outputs to `reports/osm_matching_coverage_analysis.xlsx` and `reports/figures/matcheddata/`
 
-### 5. Crash-to-Image Matching
+### 5. Crash-to-Image Matching (Exploratory)
 ```bash
 python src/features/match_crashes_to_images.py
 ```
-- Matches crashes to Mapillary images based on spatial proximity
-- Uses multiple distance thresholds (5m, 10m, 25m) for comparison
+- Matches crashes to Mapillary images based on spatial proximity (exploratory analysis)
+- Uses multiple distance thresholds (5 m, 10 m, 25 m) for comparison
 - Filters matches by road attributes (highway AND surface must match)
 - Tracks temporal relationships (crashes before/after/same year as image)
 - Identifies shared crashes (crashes matched to multiple images)
 - Generates labeled datasets: `data/processed/mapillary_labeled_{5m,10m,25m}.csv`
 
 **Key Results:**
-- **5m threshold**: 2,063 images with crashes (6.0%), 2,865 total matches
-- **10m threshold**: 5,399 images with crashes (15.7%), 9,404 total matches
-- **25m threshold**: 12,267 images with crashes (35.8%), 37,493 total matches
+- **5 m threshold**: 2,063 images with crashes (6.0%), 2,865 total matches
+- **10 m threshold**: 5,399 images with crashes (15.7%), 9,404 total matches
+- **25 m threshold**: 12,267 images with crashes (35.8%), 37,493 total matches
 - All images preserved in output (even those with no matches)
+- ⚠️ **Note**: Previous exploratory distance-based matching (5 m, 10 m, 25 m) is reported in Appendix only; the final predictive dataset exclusively uses cluster-based linking (point-in-polygon).
 
 ### 6. Matching Analysis & Visualization
 ```bash
@@ -163,22 +186,23 @@ python src/viz/analyze_match_results.py
 - CSV summaries: matching_summary_statistics.csv, shared_crashes_statistics.csv, crash_count_distributions.csv, matched_crashes_per_year.csv, temporal_distribution.csv
 - Visualizations: 8 figure files including summary dashboard, distribution comparisons, temporal analysis
 
-### 7. Create 15m Cluster Dataset
+### 7. Create 15 m Cluster Dataset
 ```bash
 python src/features/create_cluster_dataset.py
 ```
-- Creates 15m × 15m spatial clusters (tiles) from Mapillary images
+- Creates 15 m × 15 m spatial clusters from Mapillary images
 - Aggregates images per cluster with OSM attributes (year-independent clusters)
 - Matches crashes to clusters using point-in-polygon (no distance threshold, no year filtering)
 - Generates cluster-level analysis reports and visualizations
 - Creates stratified train/val/test split (70/15/15) by match_label
 
 **Key Features:**
-- **Cluster Assignment**: 15m UTM grid tiles covering Berlin, assigns cluster_id to each image
+- **Cluster Assignment**: 15 m × 15 m UTM grid clusters covering Berlin, assigns cluster_id to each image
 - **Aggregation**: All images in a cluster aggregated together regardless of year
-- **Crash Matching**: Spatial matching only (all crashes in cluster bounds), tracks crash years as info
+- **Crash Matching**: Point-in-polygon spatial matching (crashes assigned if within cluster bounds), tracks crash years as informational metadata
 - **Reports**: Summary statistics, crash distributions, temporal analysis, image statistics
 - **Dataset Split**: Stratified by crash presence to balance positive/negative examples
+- **Approach**: Uses static spatial framework with contemporaneous crash and imagery data
 
 **Output Files:**
 - `data/processed/clusters_with_crashes.csv` - Final dataset with one row per cluster_id
@@ -254,6 +278,11 @@ python src/modeling/test_yolo_model.py \
     --num-samples 20
 ```
 - Evaluates trained YOLOv8 model on Czech + Norway test images (1,633 images)
+- Computes mAP50, mAP50-95, precision, recall, F1 scores
+- Generates confusion matrix and class-specific metrics
+- Saves detailed evaluation reports (JSON, CSV)
+- Creates visualization plots for metrics
+- Optionally saves sample predictions with bounding boxes
 
 ### 10. YOLO Street Quality Features & Enhanced Regression
 ```bash
@@ -270,19 +299,25 @@ python src/modeling/compare_baseline_vs_yolo.py
 python src/modeling/robustness_analysis_yolo.py
 ```
 - Extracts robust road-focused damage metrics from YOLO detections
-- Uses trapezoid ROI (bottom-centered) to reduce framing bias
+- Uses square ROI covering bottom 60% of image height, centered horizontally
 - Computes per-cluster aggregated metrics: street quality, damage density, detection counts
 - Winsorizes metrics per split independently (1%/99% tails)
 - Trains enhanced logistic regression with YOLO features + baseline infrastructure attributes
 - Compares performance against baseline model on train/test splits
 - Performs robustness checks with alternative YOLO features and model specifications
 
+**Key Results:**
+- YOLO coefficient: β = +0.095, p = 0.031 (positive → more damage, more crashes)
+- Model performance compared against baseline on train/test splits
+- Metrics: Accuracy, Precision, Recall, F1, ROC AUC, McFadden R²
+
 **Key Features:**
-- **ROI Filtering**: Trapezoid mask focuses on road area (bottom 60% of image, 70% width)
-- **Per-Image Metrics**: count_roi, ratio_roi, percent_roi, density (per ROI megapixel)
+- **ROI Filtering**: Square ROI covering the bottom 60% of the image height, centered horizontally to focus on road area
+- **Per-Image Metrics**: count_roi, ratio_roi, percent_roi (damaged area / ROI area), density (per ROI megapixel)
 - **Per-Cluster Aggregation**: Median percent_roi → street_quality_roi, IQR, image count
 - **Winsorization**: Reduces outlier impact while preserving distribution shape
 - **Primary Feature**: street_quality_roi_winz (winsorized street quality percentage)
+- **Variable Interpretation**: percent_roi = damaged area / ROI area → higher = more detected damage = worse road condition → higher crash probability
 
 **Output Files:**
 - `data/processed/clusters_{train,val,test}_with_yolo_roi.csv` - Datasets with YOLO features
@@ -290,11 +325,6 @@ python src/modeling/robustness_analysis_yolo.py
 - `reports/Regression_withYOLO/` - Enhanced model reports and visualizations
 - `reports/Comparison_Baseline_vs_YOLO/` - Performance comparison analysis
 - `reports/Regression_withYOLO/sensitivity_analysis.csv` - Robustness check results
-- Computes mAP50, mAP50-95, precision, recall, F1 scores
-- Generates confusion matrix and class-specific metrics
-- Saves detailed evaluation reports (JSON, CSV)
-- Creates visualization plots for metrics
-- Optionally saves sample predictions with bounding boxes
 
 ### Setup
 
@@ -329,11 +359,11 @@ python src/modeling/robustness_analysis_yolo.py
 
 ## 📦 Expected Outputs
 
-* `reports/figures/rawdata/images_by_year.png` (yearly image distribution)
+* `reports/figures/rawdata/images_by_year.png` (yearly image distribution 2013-2025)
 * `reports/figures/rawdata/images_by_quarter.png` (quarterly trends 2013-2025)
 * `reports/figures/rawdata/images_by_month_2018_2021.png` (monthly patterns 2018-2021)
 * `reports/figures/rawdata/images_spatial_distribution.png` (spatial distribution map)
-* `reports/figures/rawdata/crashes_by_year.png` (yearly crash distribution)
+* `reports/figures/rawdata/crashes_by_year.png` (yearly crash distribution 2018-2024)
 * `reports/figures/rawdata/crashes_by_quarter.png` (quarterly crash trends)
 * `reports/figures/rawdata/crashes_by_month_2018_2021.png` (monthly crash patterns)
 * `reports/figures/rawdata/crashes_spatial_distribution.png` (spatial crash distribution)
@@ -347,7 +377,6 @@ python src/modeling/robustness_analysis_yolo.py
 * `reports/figures/rawdata/crashes_heatmap_hour_weekday.png` (temporal heatmap)
 * `reports/figures/rawdata/crashes_by_district.png` (district comparison)
 * `reports/figures/berlin_dataflow.png` (dataflow diagram)
-* `reports/figures/tiles_change_maps_{feature}.png` (change heatmaps)
 
 ### OSM Infrastructure Enrichment Outputs
 * `reports/osm_matching_coverage_analysis.xlsx` (comprehensive Excel report with 7 sheets)
@@ -372,7 +401,7 @@ python src/modeling/robustness_analysis_yolo.py
 * `reports/Matches/figures/` (8 visualization files including summary dashboard)
 
 ### Cluster Dataset Outputs
-* `data/processed/clusters_with_crashes.csv` (15m clusters with crash matches, one row per cluster_id)
+* `data/processed/clusters_with_crashes.csv` (15 m clusters with crash matches, one row per cluster_id)
 * `reports/Clusters/cluster_summary_statistics.csv` (overall cluster statistics)
 * `reports/Clusters/cluster_crash_distributions.csv` (crash count distribution per cluster)
 * `reports/Clusters/cluster_temporal_distribution.csv` (crash years from crash_years column)
@@ -388,11 +417,15 @@ python src/modeling/robustness_analysis_yolo.py
 * `runs/detect/train/` (training metrics, plots, and logs)
 
 ### Data Files
-* `data/processed/crashes_aggregated.csv` (cleaned crash data 2018-2021)
-* `data/processed/tile_year_features.parquet` (tile×year visual features)
-* `data/processed/tile_year_crashes.parquet` (tile×year crash counts)
+* `data/processed/crashes_aggregated.csv` (cleaned crash data 2018-2024)
+* `data/processed/clusters_with_crashes.csv` (cluster-level dataset with crash matches)
+* `data/processed/clusters_{train,val,test}_with_residuals.csv` (datasets with residual column for CNN)
+* `data/processed/clusters_{train,val,test}_with_yolo_roi.csv` (datasets with YOLO features)
 * `models/results_baseline.csv` (metrics comparing models with/without imagery)
-* Short **slide deck** or **2–3 page writeup** with key findings
+* `models/baseline_logistic_regression.pkl` (baseline model pipeline)
+* `models/logistic_regression_with_yolo.pkl` (YOLO-enhanced model pipeline)
+* `models/cnn_residual_best.pth` (CNN residual prediction model)
+* Comprehensive reports in `reports/Regression_beforeCNN/`, `reports/Regression_withYOLO/`, `reports/Comparison_Baseline_vs_YOLO/`, `reports/CNN/`
 
 ## 🗂️ Repository Structure
 
@@ -403,9 +436,7 @@ berlin-road-crash/
 │  ├─ interim/           # filtered imagery lists, tiles
 │  └─ processed/         # aggregated features, tile-year tables
 ├─ notebooks/
-│  ├─ 00_explore.ipynb
-│  ├─ 10_feature_inference.ipynb
-│  └─ 20_modeling.ipynb
+│  └─ End to End Berlin Road Crash.ipynb  # Complete end-to-end pipeline reproduction
 ├─ src/
 │  ├─ fetch/
 │  │  ├─ mapillary_pull.py
@@ -437,28 +468,30 @@ berlin-road-crash/
 └─ Makefile    # optional task shortcuts
 ```
 
-## ⏱️ Implementation Plan
+## ⏱️ Implementation Workflow
 
-### I. Data pull & tiling
-1. **Crash data (2016–2024)**: download Berlin Unfallatlas (https://unfallatlas.statistikportal.de)
-2. **Mapillary metadata**: query API v4 for Berlin bounding box and years 2004–2024
+The project follows a 3-stage static workflow: (1) Baseline OSM model → (2) YOLO-augmented regression → (3) CNN residual interpretation.
+
+### Stage 1: Data Collection & Cluster Creation
+1. **Crash data (2018–2024)**: download Berlin Unfallatlas (97,511 total crashes)
+2. **Mapillary metadata**: query API v4 for Berlin bounding box (2013–2025)
 3. **OSM roads**: download Berlin extract (PBF/GeoJSON)
-4. **Tiles**: create **15 m** hex or square grid in EPSG:25833 covering Berlin
-5. **Spatial joins**: images → tiles, crash points → tiles
-6. **Coverage controls**: compute `images_per_tile_year` to control for sampling bias
+4. **Clusters**: create **15 m × 15 m** square grid in EPSG:25833 covering Berlin
+5. **Spatial joins**: images → clusters, crash points → clusters (point-in-polygon)
+6. **Enrichment**: match crashes and images to OSM roads (10 m threshold for snapping)
 
-### II. Visual features (inference) & aggregation
-1. **Sampling strategy**: From tiles with ≥N images/year, sample up to **k=5 images** per tile per year
-2. **Detector(s)**: YOLOv8s finetuned on RDD2022 dataset for road damage detection
-3. **Run inference** and store per‑image predictions
-4. **Aggregate features per tile×year**: mean/sum normalized by image count
+### Stage 2: Visual Feature Extraction & Modeling
+1. **YOLO inference**: YOLOv8s finetuned on RDD2022 dataset for road damage detection
+2. **ROI filtering**: Square ROI covering bottom 60% of image, centered horizontally
+3. **Feature aggregation**: median percent_roi per cluster → street_quality_roi_winz
+4. **Modeling**: Baseline (OSM features only) vs. Enhanced (OSM + YOLO features)
+5. **Evaluation**: Accuracy, Precision, Recall, F1, ROC AUC, McFadden R²
 
-### III. Modeling, evaluation, visualization
-1. **Create Δ features**: `Δfeat_{t} = feat_{t} − feat_{t−1}`
-2. **Crash targets**: annual counts (Poisson/nb) or rates per road length
-3. **Models**: Baseline (controls only) vs. + imagery features vs. + Δ features
-4. **Evaluate**: LL, AIC, RMSE on held‑out tiles (spatial CV)
-5. **Visualize**: change heatmaps, partial dependence, example tiles
+### Stage 3: CNN Residual Analysis
+1. **Residual computation**: actual crash probability - predicted (baseline + YOLO)
+2. **CNN training**: ResNet18 predicts residuals from visual features
+3. **Interpretability**: Grad-CAM visualizations for high-risk cluster identification
+4. **Model comparison**: quantify added value beyond baseline and YOLO-augmented models
 
 ## 🧰 Key Dependencies
 
@@ -495,14 +528,16 @@ berlin-road-crash/
 - ✅ Saves results to `data/raw/mapillary_berlin_full.csv`
 - ✅ Shows preview and summary statistics
 
-**Coverage:** Uses 32 non-overlapping tiles to cover all of Berlin, respecting the API's 0.010 square degree limit per request. Expected to retrieve 15,000-50,000 unique images.
+**Coverage:** Uses 32 non-overlapping tiles to cover all of Berlin (2013–2025), respecting the API's 0.010 square degree limit per request. Expected to retrieve 15,000-50,000 unique images.
 
 ### Output format:
 CSV with columns: `id`, `lon`, `lat`, `captured_at`, `thumb_256_url`
 
+**Note:** Due to data size and licensing, raw and processed datasets are excluded from the repository. Scripts automatically download open data from Mapillary, OSM (Geofabrik), and Unfallatlas when executed.
+
 ## 🧠 CNN Residual Prediction Pipeline
 
-The project includes a CNN pipeline that predicts residual crash risk (unexplained by OSM attributes) from street-level images:
+The project includes a CNN pipeline that predicts residual crash risk (unexplained by OSM attributes and YOLO features) from street-level images:
 
 ### 1. Data Preparation
 ```bash
@@ -532,6 +567,7 @@ python src/modeling/train_cnn_residual.py --resume [--max_epochs 26]
 - **Checkpoint resuming**: Use `--resume` flag to continue from last saved checkpoint
 - Early stopping based on validation MSE
 - Saves model in eval mode for Grad-CAM compatibility
+- **Residual Definition**: Actual crash probability - predicted probability (from baseline or YOLO-enhanced model)
 
 **Performance Optimizations:**
 - **Parallel downloads**: 16 concurrent downloads for initial image caching (much faster)
@@ -554,13 +590,14 @@ python src/modeling/visualize_cnn_results.py
 - Saves figures to `reports/CNN/figures/`
 
 **Key Features:**
-- **Residual Prediction**: CNN learns visual safety cues that OSM attributes missed
+- **Residual Prediction**: CNN learns visual safety cues that OSM attributes and YOLO features missed
 - **Grad-CAM Ready**: Model preserves ResNet structure for interpretability
 - **One Image Per Cluster**: Clean 1:1 mapping for faster training
 - **MPS Support**: Automatic GPU acceleration on Apple Silicon
 - **Comprehensive Outputs**: Model weights, predictions, rankings, visualizations
+- **Model Comparison**: Quantifies added value beyond baseline and YOLO-augmented models (ΔAUC, ΔR²)
 
-**Temporal Analysis:** All images are captured regardless of date. For analysis, you can compare periods like "before 2020" vs "after 2020" using the `captured_at` field.
+**Temporal Context:** All images span 2013-2025, crashes span 2018-2024. The model uses a static spatial framework with contemporaneous matching. For exploration, you can compare periods like "before 2020" vs "after 2020" using the `captured_at` field.
 
 ### Example API call (manual):
 ```python
@@ -575,12 +612,13 @@ response = requests.get(url)
 ## ⚠️ Important Notes
 
 * **Selection bias** in Mapillary (contributors favor central/wealthy areas). Mitigate with coverage controls
-* **Temporal mismatch**: ensure you don't use 2024 imagery to predict 2016 crashes; always lag features
-* **Non‑causal**: Do not claim that defects *cause* crashes; phrase as predictive associations
+* **Temporal coverage**: Mapillary images (2013-2025) and crashes (2018-2024) use contemporaneous matching in static spatial framework
+* **Non‑causal**: Do not claim that defects *cause* crashes; phrase as predictive/correlational associations
+* **Crash matching**: Final predictive model uses cluster-based linking (point-in-polygon with 15 m clusters), not distance thresholds
 
 ## 📚 Next Steps
 
 1. Review the `MasterSystemPrompt.md` for detailed technical specifications
 2. Set up the conda environment and install dependencies
-3. Begin with Day 1 tasks: data collection and tiling
-4. Follow the 3-day implementation plan systematically
+3. Run the data collection scripts to download raw data
+4. Follow the 3-stage workflow: Baseline → YOLO → CNN

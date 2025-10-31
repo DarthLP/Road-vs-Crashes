@@ -55,6 +55,7 @@ import matplotlib.pyplot as plt
 
 # Statsmodels for augmentation regression (p-values, pseudo-R²)
 import statsmodels.api as sm
+from statsmodels.discrete.discrete_model import BinaryResultsWrapper
 
 # Optional torch imports for CNN inference on Val
 import torch
@@ -85,6 +86,10 @@ YOLO_PIPELINE_PATH = MODELS_DIR / 'logistic_regression_with_yolo.pkl'
 CLUSTERS_TRAIN = DATA_DIR / 'clusters_train_with_residuals.csv'
 CLUSTERS_VAL = DATA_DIR / 'clusters_val_with_residuals.csv'
 CLUSTERS_TEST = DATA_DIR / 'clusters_test_with_residuals.csv'
+
+CLUSTERS_TRAIN_YOLO = DATA_DIR / 'clusters_train_with_yolo_roi.csv'
+CLUSTERS_VAL_YOLO = DATA_DIR / 'clusters_val_with_yolo_roi.csv'
+CLUSTERS_TEST_YOLO = DATA_DIR / 'clusters_test_with_yolo_roi.csv'
 
 
 # -----------------------------------------------------------------------------
@@ -280,7 +285,7 @@ def get_baseline_prob(df: pd.DataFrame, pipeline_path: Path) -> np.ndarray:
     return proba
 
 
-def fit_aug_logit_val(y_val: np.ndarray, p_base_val: np.ndarray, yhat_cnn_val: np.ndarray) -> sm.discrete.discrete_model.BinaryResultsWrapper:
+def fit_aug_logit_val(y_val: np.ndarray, p_base_val: np.ndarray, yhat_cnn_val: np.ndarray) -> BinaryResultsWrapper:
     """Fit augmentation logistic regression on Val: Crash ~ p_baseline + yhat_CNN."""
     X = np.column_stack([p_base_val, yhat_cnn_val])
     X = sm.add_constant(X)
@@ -295,6 +300,11 @@ def evaluate_models(args):
     y_val = val_df['match_label'].astype(int).values
     y_test = test_df['match_label'].astype(int).values
 
+    # Load YOLO datasets for YOLO model inference
+    train_df_yolo = pd.read_csv(CLUSTERS_TRAIN_YOLO)
+    val_df_yolo = pd.read_csv(CLUSTERS_VAL_YOLO)
+    test_df_yolo = pd.read_csv(CLUSTERS_TEST_YOLO)
+
     # Baseline and YOLO probabilities
     p_base_val = get_baseline_prob(val_df, BASELINE_PIPELINE_PATH)
     p_base_test = get_baseline_prob(test_df, BASELINE_PIPELINE_PATH)
@@ -302,8 +312,8 @@ def evaluate_models(args):
     p_yolo_val = None
     p_yolo_test = None
     if YOLO_PIPELINE_PATH.exists():
-        p_yolo_val = get_baseline_prob(val_df, YOLO_PIPELINE_PATH)
-        p_yolo_test = get_baseline_prob(test_df, YOLO_PIPELINE_PATH)
+        p_yolo_val = get_baseline_prob(val_df_yolo, YOLO_PIPELINE_PATH)
+        p_yolo_test = get_baseline_prob(test_df_yolo, YOLO_PIPELINE_PATH)
 
     # CNN predictions for Val/Test
     # Test: prefer saved predictions; else infer
@@ -364,7 +374,7 @@ def evaluate_models(args):
     # Use fitted coefficients to compute probabilities on Test
     def sigmoid(x):
         return 1.0 / (1.0 + np.exp(-x))
-    logit_test = X_test_aug @ params.values
+    logit_test = X_test_aug @ params
     p_aug_test = sigmoid(logit_test)
 
     # Metrics and deltas
@@ -391,7 +401,7 @@ def evaluate_models(args):
         aug_yolo_res = fit_aug_logit_val(y_val, p_yolo_val, yhat_cnn_val)
         params_y = aug_yolo_res.params
         X_test_aug_y = sm.add_constant(np.column_stack([p_yolo_test, yhat_cnn_test]))
-        p_aug_y_test = sigmoid(X_test_aug_y @ params_y.values)
+        p_aug_y_test = sigmoid(X_test_aug_y @ params_y)
         auc_aug_y = roc_auc_score(y_test, p_aug_y_test)
         pseudo_aug_y = compute_pseudo_r2(y_test, p_aug_y_test)
         results_rows.append({'model': 'yolo+cnn', 'AUC': auc_aug_y, 'pseudo_R2': pseudo_aug_y})
@@ -410,17 +420,17 @@ def evaluate_models(args):
     # Save augmentation regression table (coefficients and p-values)
     aug_table = pd.DataFrame({
         'term': ['Intercept', 'baseline_prob', 'cnn_pred_residual'],
-        'coef': params.values,
-        'std_err': bse.values,
-        'p_value': pvalues.values
+        'coef': np.array(params),
+        'std_err': np.array(bse),
+        'p_value': np.array(pvalues)
     })
     aug_table.to_csv(REPORTS_CNN_DIR / 'cnn_augmentation_regression.csv', index=False)
 
     # Figures: coefficients bar plot
     plt.figure(figsize=(6, 4))
     terms = ['baseline_prob', 'cnn_pred_residual']
-    coefs = [params['x1'], params['x2']]
-    errs = [bse['x1'], bse['x2']]
+    coefs = [params[1], params[2]]  # Skip intercept (index 0)
+    errs = [bse[1], bse[2]]
     colors = ['#4C78A8', '#F58518']
     plt.bar(terms, coefs, yerr=errs, color=colors, alpha=0.9)
     plt.axhline(0, color='black', linewidth=1)
@@ -456,13 +466,13 @@ def evaluate_models(args):
     rows = []
     variants = [('baseline', p_base_val, p_base_test)]
     if 'baseline+cnn' in results_df['model'].values:
-        variants.append(('baseline+cnn', sigmoid(X_val_aug @ params.values), p_aug_test))
+        variants.append(('baseline+cnn', sigmoid(X_val_aug @ params), p_aug_test))
     if p_yolo_val is not None and p_yolo_test is not None:
         variants.append(('yolo', p_yolo_val, p_yolo_test))
         if 'yolo+cnn' in results_df['model'].values:
             # Recompute Val augmented probabilities for YOLO variant
             X_val_aug_y = sm.add_constant(np.column_stack([p_yolo_val, yhat_cnn_val]))
-            variants.append(('yolo+cnn', sigmoid(X_val_aug_y @ params_y.values), p_aug_y_test))
+            variants.append(('yolo+cnn', sigmoid(X_val_aug_y @ params_y), p_aug_y_test))
 
     for name, p_val, p_test in variants:
         thr = find_optimal_thresholds(y_val, p_val)
@@ -492,6 +502,47 @@ def evaluate_models(args):
     plt.tight_layout()
     plt.savefig(REPORTS_COMP_DIR / 'threshold_metrics_bars.png', dpi=200)
     plt.close()
+
+    # Save Excel report with all results
+    excel_path = REPORTS_CNN_DIR / 'cnn_regression_results.xlsx'
+    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+        # Sheet 1: Augmentation regression coefficients
+        aug_table.to_excel(writer, sheet_name='Regression_Coefficients', index=False)
+        
+        # Sheet 2: Model comparison (AUC and pseudo-R²)
+        results_df.to_excel(writer, sheet_name='Model_Comparison', index=False)
+        
+        # Sheet 3: Threshold metrics
+        thr_df.to_excel(writer, sheet_name='Threshold_Metrics', index=False)
+        
+        # Sheet 4: Summary statistics
+        summary_data = {
+            'Metric': [
+                'Correlation (true residual, predicted residual)',
+                'Correlation p-value',
+                'ΔAUC (baseline+CNN - baseline)',
+                'ΔPseudo-R² (baseline+CNN - baseline)'
+            ],
+            'Value': [
+                f"{corr:.4f}",
+                f"{p:.3e}",
+                f"{delta_auc_base:.4f}",
+                f"{delta_pr2_base:.4f}"
+            ]
+        }
+        if not np.isnan(delta_auc_yolo) and not np.isnan(delta_pr2_yolo):
+            summary_data['Metric'].extend([
+                'ΔAUC (YOLO+CNN - YOLO)',
+                'ΔPseudo-R² (YOLO+CNN - YOLO)'
+            ])
+            summary_data['Value'].extend([
+                f"{delta_auc_yolo:.4f}",
+                f"{delta_pr2_yolo:.4f}"
+            ])
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False)
+    
+    print(f"\n✓ Saved comprehensive Excel report to: {excel_path}")
 
     # Console summary
     print("\n=== Correlation (Test) ===")

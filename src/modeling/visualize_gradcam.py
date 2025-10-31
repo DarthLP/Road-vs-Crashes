@@ -50,6 +50,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
 from scipy.stats import pearsonr
+import cv2
 try:
     from tqdm import tqdm
     HAS_TQDM = True
@@ -671,10 +672,21 @@ def main():
             original_path = output_dir / 'originals' / f"cluster_{cluster_str}_original.png"
             original_img.save(original_path)
             
-            # Save heatmap
-            heatmap_img = Image.fromarray((cam * 255).astype(np.uint8))
+            # Save heatmap (upscale and apply colormap)
+            # Upscale CAM to match original image size (224x224)
+            cam_upscaled = cv2.resize(cam, (224, 224), interpolation=cv2.INTER_CUBIC)
+            
+            # Apply colormap to CAM
+            colormap_cv2 = getattr(cv2, f'COLORMAP_{args.colormap.upper()}')
+            cam_colored = cv2.applyColorMap((cam_upscaled * 255).astype(np.uint8), colormap_cv2)
+            
+            # Convert BGR to RGB
+            cam_colored = cv2.cvtColor(cam_colored, cv2.COLOR_BGR2RGB)
+            
+            # Save as RGB image
+            heatmap_img = Image.fromarray(cam_colored)
             heatmap_path = output_dir / 'heatmaps' / f"cluster_{cluster_str}_heatmap.png"
-            heatmap_img.save(heatmap_path)
+            heatmap_img.save(heatmap_path, dpi=(150, 150))
             
             # Save overlay
             overlay_img = Image.fromarray(overlay)
